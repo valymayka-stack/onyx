@@ -6,6 +6,16 @@ import BannedOverlay from "@/components/BannedOverlay";
 
 const MIN_INTERVAL_MS = 2000;
 
+// How long a tab/window has to stay hidden before returning-and-clicking
+// counts as suspicious — long enough to plausibly switch to a screen
+// recorder and position it, short enough to still catch someone doing that
+// right before clicking through the photos. Genuine accidental alt-tabs
+// that come straight back (checking a notification, muscle-memory Cmd+Tab)
+// are almost always shorter than this.
+const SUSTAINED_BLUR_MS = 4000;
+// How long after returning a click still counts as tied to that blur.
+const POST_BLUR_CLICK_WINDOW_MS = 4000;
+
 // Keyboard shortcuts that open browser DevTools — a soft deterrent only.
 // Any of these can still be reached via the browser's own menu, and OS-level
 // screenshot shortcuts (Cmd+Shift+3/4/5, PrintScreen, Win+Shift+S) are never
@@ -41,6 +51,8 @@ export default function ProtectedContentGuard({
   children: React.ReactNode;
 }) {
   const lastSentRef = useRef<Record<string, number>>({});
+  const blurStartRef = useRef<number | null>(null);
+  const sustainedBlurEndRef = useRef<number | null>(null);
   const [obscured, setObscured] = useState(false);
   const [banned, setBanned] = useState<string | null>(null);
 
@@ -78,20 +90,39 @@ export default function ProtectedContentGuard({
     // native OS screenshot (that never blurs or hides the window), only
     // reduces exposure when someone else could be looking at the screen
     // during a tab/app switch.
+    function markBlurStart() {
+      if (blurStartRef.current === null) blurStartRef.current = Date.now();
+      setObscured(true);
+    }
+    // A screen-recording app can't be seen by page JS any more than a
+    // screenshot can, but switching to one always costs at least a tab/app
+    // switch first — so a hidden period long enough to plausibly set one up,
+    // followed shortly by clicking through the photos again, is the closest
+    // indirect signal available. Recorded here as its own timestamp rather
+    // than banning immediately on refocus, since the suspicious part is the
+    // *click after* returning, not the return itself.
+    function markBlurEnd() {
+      const start = blurStartRef.current;
+      blurStartRef.current = null;
+      setObscured(false);
+      if (start !== null && Date.now() - start >= SUSTAINED_BLUR_MS) {
+        sustainedBlurEndRef.current = Date.now();
+      }
+    }
     function onVisibilityChange() {
       if (document.visibilityState === "hidden") {
         report("visibility_hidden");
-        setObscured(true);
+        markBlurStart();
       } else {
-        setObscured(false);
+        markBlurEnd();
       }
     }
     function onBlur() {
       report("blur");
-      setObscured(true);
+      markBlurStart();
     }
     function onFocus() {
-      setObscured(false);
+      markBlurEnd();
     }
 
     // Classic docked-DevTools heuristic (viewport shrinks when the panel
@@ -124,10 +155,21 @@ export default function ProtectedContentGuard({
       }
     }
 
+    // Capture phase, so this still fires even if a child (e.g. the lightbox)
+    // calls stopPropagation() on the same click during the bubble phase.
+    function onClickAnywhere() {
+      const end = sustainedBlurEndRef.current;
+      if (end !== null && Date.now() - end <= POST_BLUR_CLICK_WINDOW_MS) {
+        sustainedBlurEndRef.current = null;
+        report("external_capture_suspected");
+      }
+    }
+
     window.addEventListener("blur", onBlur);
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("click", onClickAnywhere, true);
     const interval = setInterval(checkDevTools, 3000);
 
     return () => {
@@ -135,6 +177,7 @@ export default function ProtectedContentGuard({
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("click", onClickAnywhere, true);
       clearInterval(interval);
     };
   }, []);
@@ -149,7 +192,10 @@ export default function ProtectedContentGuard({
         e.preventDefault();
         report("right_click_blocked");
       }}
-      onDragStart={(e) => e.preventDefault()}
+      onDragStart={(e) => {
+        e.preventDefault();
+        report("drag_blocked");
+      }}
       onCopy={(e) => {
         e.preventDefault();
         report("selection_blocked");

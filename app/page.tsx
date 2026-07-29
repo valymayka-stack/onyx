@@ -14,17 +14,12 @@ export default function Home() {
         </h1>
         <p className="max-w-md text-sm leading-relaxed text-muted-foreground">
           Tu espacio privado para conectar con tus fans más cercanos.
-          Crea una cuenta para entrar, o inicia sesión si ya tienes una.
+          Inicia sesión con la cuenta que recibiste.
         </p>
       </div>
 
       <div className="flex gap-3">
-        <Button nativeButton={false} render={<Link href="/signup">Crear cuenta</Link>} />
-        <Button
-          variant="outline"
-          nativeButton={false}
-          render={<Link href="/login">Iniciar sesión</Link>}
-        />
+        <Button nativeButton={false} render={<Link href="/login">Iniciar sesión</Link>} />
       </div>
     </main>
   );

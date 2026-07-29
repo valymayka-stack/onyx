@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/admin", label: "Resumen" },
   { href: "/admin/security", label: "Seguridad" },
   { href: "/admin/users", label: "Usuarios" },
+  { href: "/admin/users/new", label: "Crear fan" },
   { href: "/admin/content", label: "Contenido" },
   { href: "/admin/leaks", label: "Fugas" },
   { href: "/admin/watermark-check", label: "Verificar marca" },

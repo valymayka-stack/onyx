@@ -59,6 +59,12 @@ export default function MfaVerifyForm() {
       return;
     }
 
+    // Accounts aren't meant to be shared — completing MFA is the point a
+    // login becomes "real" (aal2), so this is where any other active session
+    // for this account gets kicked. Best-effort: a failure here shouldn't
+    // block this login.
+    await supabase.auth.signOut({ scope: "others" }).catch(() => {});
+
     // A full navigation (not router.push) so the new request carries the
     // stepped-up aal2 cookie and middleware/server components see it
     // immediately — avoids a race where the client router re-fetches the

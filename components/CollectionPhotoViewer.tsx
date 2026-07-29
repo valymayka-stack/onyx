@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import HoneypotDownloadButton from "@/components/HoneypotDownloadButton";
 import { Button } from "@/components/ui/button";
 
 interface PhotoItem {
@@ -14,10 +13,8 @@ interface PhotoItem {
 
 export default function CollectionPhotoViewer({
   items,
-  purchased,
 }: {
   items: PhotoItem[];
-  purchased: boolean;
 }) {
   const [index, setIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -78,8 +75,6 @@ export default function CollectionPhotoViewer({
           </>
         )}
       </div>
-
-      {!current.isCover && purchased && <HoneypotDownloadButton itemId={current.id} />}
 
       {items.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-1">

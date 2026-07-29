@@ -3,8 +3,8 @@
 // Coarse client-side device signal: canvas rendering quirks + UA + screen
 // geometry hashed together. Not meant to be unique/forensic-grade — just
 // sticky enough that the same browser/device produces the same value across
-// a fresh signup attempt, so a banned device can be recognized even after an
-// IP change (see app/api/auth/signup-check and app/api/honeypot/download).
+// sessions, so a banned device can be recognized even after an IP change
+// (see app/api/security-events).
 export function computeDeviceFingerprint(): string {
   const cached = sessionStorage.getItem("device_fp");
   if (cached) return cached;

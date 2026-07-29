@@ -4,7 +4,6 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { issueContentToken } from "@/lib/signing/contentToken";
 import AppHeader from "@/components/AppHeader";
 import ProtectedContentGuard from "@/components/ProtectedContentGuard";
-import HoneypotDownloadButton from "@/components/HoneypotDownloadButton";
 import SubscribeButton from "@/components/SubscribeButton";
 import CollectionPurchaseButton from "@/components/CollectionPurchaseButton";
 import CollectionConsentGate from "@/components/CollectionConsentGate";
@@ -152,7 +151,7 @@ export default async function CreatorPage({
                       )}
                     </div>
 
-                    <CollectionPhotoViewer items={collectionItemsList} purchased={purchased} />
+                    <CollectionPhotoViewer items={collectionItemsList} />
 
                     {!purchased && (
                       <CollectionPurchaseButton collectionId={collection.id} />
@@ -193,16 +192,14 @@ export default async function CreatorPage({
 
               const token = issueContentToken(item.id, user!.id);
               return (
-                <div key={item.id} className="flex flex-col gap-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/content/${item.id}?t=${token}`}
-                    alt=""
-                    className="aspect-square rounded-xl object-cover ring-1 ring-foreground/10"
-                    draggable={false}
-                  />
-                  <HoneypotDownloadButton itemId={item.id} />
-                </div>
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={item.id}
+                  src={`/api/content/${item.id}?t=${token}`}
+                  alt=""
+                  className="aspect-square rounded-xl object-cover ring-1 ring-foreground/10"
+                  draggable={false}
+                />
               );
             })
           ) : (

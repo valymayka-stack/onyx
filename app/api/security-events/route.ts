@@ -7,20 +7,36 @@ import { applyBan } from "@/lib/security/banCascade";
 
 const EVENT_LIMIT_PER_MINUTE = 30;
 
-// Any sign of DevTools triggers the same ban cascade as the honeypot.
-// "devtools_key_blocked" (F12, Ctrl+Shift+I, etc.) is an explicit shortcut
-// nobody hits by accident. "devtools_suspected" (viewport-size delta /
-// debugger-timing heuristic) is intentionally included too, at the user's
-// request — accepted trade-off: it can also fire from a resized window, a
-// browser extension's side panel, or a slow machine, so this setting will
-// occasionally ban someone who never opened DevTools.
-const DEVTOOLS_BAN_EVENT_TYPES = new Set(["devtools_key_blocked", "devtools_suspected"]);
+// Every one of these is a deliberate exfiltration attempt, not something a
+// legitimate viewer does by accident — so each one bans on its own, no
+// honeypot needed anymore:
+// - devtools_key_blocked: explicit shortcut (F12, Ctrl+Shift+I, etc.)
+// - devtools_suspected: viewport-size-delta / debugger-timing heuristic —
+//   accepted trade-off, at the user's request: this can also fire from a
+//   resized window, a browser extension's side panel, or a slow machine, so
+//   it will occasionally ban someone who never opened DevTools.
+// - drag_blocked: dragging the image out to another window/folder
+// - selection_blocked: copying page content out of the guarded area
+// - external_capture_suspected: sustained tab/window blur followed shortly
+//   by a click once back — the indirect signal for "switched to a screen
+//   recorder and came back to click through the photos." Same trade-off as
+//   devtools_suspected: a slow return-and-click after any unrelated blur can
+//   also trigger this.
+// right_click_blocked and save_or_print_blocked stay OUT of this set
+// deliberately — those are things people reach for out of habit far more
+// often than they mean anything by it.
+const AUTO_BAN_EVENT_TYPES = new Set([
+  "devtools_key_blocked",
+  "devtools_suspected",
+  "drag_blocked",
+  "selection_blocked",
+  "external_capture_suspected",
+]);
 
-// Client telemetry (right-click/selection blocked, tab blur, DevTools
-// suspected, honeypot clicks are handled by their own route). The row
-// always carries the server-verified session user, never a client-supplied
-// id — a hostile client could otherwise forge events under someone else's
-// name.
+// Client telemetry (right-click/drag/selection/blur blocked, DevTools
+// suspected). The row always carries the server-verified session user, never
+// a client-supplied id — a hostile client could otherwise forge events under
+// someone else's name.
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => null);
   if (!body?.eventType) {
@@ -62,7 +78,7 @@ export async function POST(request: NextRequest) {
     metadata: body.metadata ?? null,
   });
 
-  if (user && DEVTOOLS_BAN_EVENT_TYPES.has(body.eventType)) {
+  if (user && AUTO_BAN_EVENT_TYPES.has(body.eventType)) {
     await applyBan(admin, {
       userId: user.id,
       ip,
@@ -74,7 +90,7 @@ export async function POST(request: NextRequest) {
       {
         banned: true,
         message:
-          "Se detectaron herramientas de desarrollador. Tu cuenta ha sido suspendida.",
+          "Se detectó un intento de extraer contenido protegido. Tu cuenta ha sido suspendida.",
       },
       { status: 403 },
     );

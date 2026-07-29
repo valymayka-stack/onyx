@@ -92,6 +92,11 @@ export default function MfaEnrollForm() {
       return;
     }
 
+    // Accounts aren't meant to be shared — see the same call in
+    // MfaVerifyForm for why this lives at the MFA step rather than at the
+    // password-only sign-in.
+    await supabase.auth.signOut({ scope: "others" }).catch(() => {});
+
     // Full navigation so the aal2-stepped-up cookie is picked up immediately
     // by middleware/server components on the destination page.
     const {

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { hasRole } from "@/lib/auth/roles";
 
-const PUBLIC_PREFIXES = ["/login", "/signup", "/api/"];
+const PUBLIC_PREFIXES = ["/login", "/api/"];
 const MFA_PREFIXES = ["/mfa/enroll", "/mfa/verify"];
 
 function isPublicPath(path: string) {
