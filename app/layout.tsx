@@ -21,7 +21,7 @@ const fraunces = Fraunces({
 });
 
 export const metadata: Metadata = {
-  title: "Sandbox Vault",
+  title: "Onyx",
   description: "Private space to connect with your fans",
 };
 
