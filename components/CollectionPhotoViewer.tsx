@@ -1,0 +1,159 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { cn } from "@/lib/utils";
+import HoneypotDownloadButton from "@/components/HoneypotDownloadButton";
+import { Button } from "@/components/ui/button";
+
+interface PhotoItem {
+  id: string;
+  url: string;
+  isCover: boolean;
+}
+
+export default function CollectionPhotoViewer({
+  items,
+  purchased,
+}: {
+  items: PhotoItem[];
+  purchased: boolean;
+}) {
+  const [index, setIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  function goTo(next: number) {
+    setIndex(((next % items.length) + items.length) % items.length);
+  }
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "ArrowLeft") goTo(index - 1);
+      if (e.key === "ArrowRight") goTo(index + 1);
+      if (e.key === "Escape") setLightboxOpen(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [index, items.length]);
+
+  if (items.length === 0) return null;
+
+  const current = items[index];
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="relative flex items-center justify-center overflow-hidden rounded-2xl bg-black">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          key={current.id}
+          src={current.url}
+          alt=""
+          className="max-h-[70vh] w-full cursor-zoom-in object-contain"
+          draggable={false}
+          onClick={() => setLightboxOpen(true)}
+        />
+
+        {items.length > 1 && (
+          <>
+            <Button
+              variant="secondary"
+              size="icon-sm"
+              className="absolute left-2 top-1/2 -translate-y-1/2 rounded-full"
+              onClick={() => goTo(index - 1)}
+            >
+              <ChevronLeft />
+            </Button>
+            <Button
+              variant="secondary"
+              size="icon-sm"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full"
+              onClick={() => goTo(index + 1)}
+            >
+              <ChevronRight />
+            </Button>
+            <div className="absolute bottom-2 right-2 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
+              {index + 1} / {items.length}
+            </div>
+          </>
+        )}
+      </div>
+
+      {!current.isCover && purchased && <HoneypotDownloadButton itemId={current.id} />}
+
+      {items.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {items.map((item, i) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => goTo(i)}
+              className={cn(
+                "size-16 shrink-0 overflow-hidden rounded-lg ring-2 transition-opacity",
+                i === index ? "ring-primary" : "ring-transparent opacity-60 hover:opacity-100",
+              )}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={item.url} alt="" className="size-full object-cover" draggable={false} />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {lightboxOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <Button
+            variant="secondary"
+            size="icon-sm"
+            className="absolute right-4 top-4 rounded-full"
+            onClick={() => setLightboxOpen(false)}
+          >
+            <X />
+          </Button>
+
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={current.url}
+            alt=""
+            className="max-h-[92vh] max-w-[95vw] cursor-zoom-out object-contain"
+            draggable={false}
+            onClick={(e) => e.stopPropagation()}
+          />
+
+          {items.length > 1 && (
+            <>
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                className="absolute left-4 top-1/2 -translate-y-1/2 rounded-full"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goTo(index - 1);
+                }}
+              >
+                <ChevronLeft />
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon-sm"
+                className="absolute right-4 top-1/2 -translate-y-1/2 rounded-full"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  goTo(index + 1);
+                }}
+              >
+                <ChevronRight />
+              </Button>
+              <div className="absolute bottom-4 rounded-full bg-black/60 px-3 py-1 text-sm text-white">
+                {index + 1} / {items.length}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
