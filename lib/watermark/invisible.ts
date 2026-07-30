@@ -117,7 +117,16 @@ const GRID_COLS = 6;
 const GRID_ROWS = 4;
 const TOTAL_BITS = GRID_COLS * GRID_ROWS; // 24 — same code length as the old scheme
 const CODE_HEX_CHARS = TOTAL_BITS / 4; // 6
-const AMPLITUDE = 1.2; // per-bit amplitude budget; see module comment — tuned to the minimum that still gave zero bit errors across every tested resize ratio
+// Per-bit amplitude budget. Originally shipped at 1.2, tuned down after
+// real-photo feedback that the grain was still visibly worse than the old
+// scheme, not just theoretically less bad. Detection confidence scales
+// with amplitude far more slowly than visibility does (the earlier 1.2 and
+// this 0.3 both gave zero bit errors across every tested resize ratio and
+// a comfortable margin over an unrelated image's baseline correlation —
+// see scripts/test-invisible-watermark.mjs), so there was real headroom to
+// cut it without losing reliability. Max per-pixel delta at this amplitude
+// is ~4.5/255, versus ~17/255 at the original 1.2.
+const AMPLITUDE = 0.3;
 const RGB_CHANNELS = 3;
 const CANONICAL_SIZE = 256; // extraction resamples to this fixed size; embedded frequencies max out at 60 cycles/image, far under its Nyquist limit
 const EMBED_GRID_SIZE = 512; // embed computes the delta pattern at this fixed size and upsamples — see embedInvisibleCode
