@@ -15,9 +15,11 @@ const FREQ_MAX = 60;
 const GRID_COLS = 6;
 const GRID_ROWS = 4;
 const TOTAL_BITS = GRID_COLS * GRID_ROWS; // 24
+const TOTAL_TONES = TOTAL_BITS * TONES_PER_BIT;
 const AMPLITUDE = 1.2;
 const RGB_CHANNELS = 3;
 const CANONICAL_SIZE = 256;
+const EMBED_GRID_SIZE = 512;
 const SECRET = "dev-only-9b1c7f3a5e8d2c6b4a0f9e7d3c1b5a8f6e2d0c4b7a9f1e3d5c8b0a6f4e2d9c1b";
 
 function getSecretSeed() {
@@ -40,26 +42,89 @@ let carrierCache = null;
 function buildCarriers(seed) {
   if (carrierCache) return carrierCache;
   const rand = makeRand(seed);
-  const carriers = [];
+  const fx = new Float64Array(TOTAL_TONES);
+  const fy = new Float64Array(TOTAL_TONES);
+  const phase = new Float64Array(TOTAL_TONES);
+  const bitOf = new Int32Array(TOTAL_TONES);
+  let flat = 0;
   for (let bit = 0; bit < TOTAL_BITS; bit++) {
-    const tones = [];
     for (let t = 0; t < TONES_PER_BIT; t++) {
-      tones.push({
-        fx: FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN),
-        fy: FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN),
-        phase: rand() * 2 * Math.PI,
-      });
+      fx[flat] = FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN);
+      fy[flat] = FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN);
+      phase[flat] = rand() * 2 * Math.PI;
+      bitOf[flat] = bit;
+      flat++;
     }
-    carriers.push(tones);
   }
-  carrierCache = carriers;
+  carrierCache = { fx, fy, phase, bitOf };
   return carrierCache;
 }
 
-function carrierValue(tones, nx, ny) {
-  let sum = 0;
-  for (const t of tones) sum += Math.cos(2 * Math.PI * (t.fx * nx + t.fy * ny) + t.phase);
-  return sum / Math.sqrt(tones.length);
+function buildTrigTables(carriers, width, height) {
+  const cosX = new Float64Array(TOTAL_TONES * width);
+  const sinX = new Float64Array(TOTAL_TONES * width);
+  const cosYP = new Float64Array(TOTAL_TONES * height);
+  const sinYP = new Float64Array(TOTAL_TONES * height);
+  for (let t = 0; t < TOTAL_TONES; t++) {
+    const fx = carriers.fx[t], fy = carriers.fy[t], phase = carriers.phase[t];
+    const xBase = t * width;
+    for (let x = 0; x < width; x++) {
+      const a = 2 * Math.PI * fx * (x / width);
+      cosX[xBase + x] = Math.cos(a);
+      sinX[xBase + x] = Math.sin(a);
+    }
+    const yBase = t * height;
+    for (let y = 0; y < height; y++) {
+      const b = 2 * Math.PI * fy * (y / height) + phase;
+      cosYP[yBase + y] = Math.cos(b);
+      sinYP[yBase + y] = Math.sin(b);
+    }
+  }
+  return { cosX, sinX, cosYP, sinYP };
+}
+
+function computeDeltaGrid(carriers, signedBits) {
+  const { cosX, sinX, cosYP, sinYP } = buildTrigTables(carriers, EMBED_GRID_SIZE, EMBED_GRID_SIZE);
+  const weight = new Float64Array(TOTAL_TONES);
+  const normalize = AMPLITUDE / Math.sqrt(TONES_PER_BIT);
+  for (let t = 0; t < TOTAL_TONES; t++) weight[t] = signedBits[carriers.bitOf[t]] * normalize;
+
+  const delta = new Float64Array(EMBED_GRID_SIZE * EMBED_GRID_SIZE);
+  const rowCosYP = new Float64Array(TOTAL_TONES);
+  const rowSinYP = new Float64Array(TOTAL_TONES);
+  for (let gy = 0; gy < EMBED_GRID_SIZE; gy++) {
+    for (let t = 0; t < TOTAL_TONES; t++) {
+      rowCosYP[t] = cosYP[t * EMBED_GRID_SIZE + gy];
+      rowSinYP[t] = sinYP[t * EMBED_GRID_SIZE + gy];
+    }
+    for (let gx = 0; gx < EMBED_GRID_SIZE; gx++) {
+      let d = 0;
+      for (let t = 0; t < TOTAL_TONES; t++) {
+        const xBase = t * EMBED_GRID_SIZE + gx;
+        d += weight[t] * (cosX[xBase] * rowCosYP[t] - sinX[xBase] * rowSinYP[t]);
+      }
+      delta[gy * EMBED_GRID_SIZE + gx] = d;
+    }
+  }
+  return delta;
+}
+
+function sampleDeltaGrid(grid, nx, ny) {
+  const gx = nx * EMBED_GRID_SIZE - 0.5;
+  const gy = ny * EMBED_GRID_SIZE - 0.5;
+  const x0 = Math.floor(gx), y0 = Math.floor(gy);
+  const fx = gx - x0, fy = gy - y0;
+  const cx0 = Math.max(0, Math.min(EMBED_GRID_SIZE - 1, x0));
+  const cx1 = Math.max(0, Math.min(EMBED_GRID_SIZE - 1, x0 + 1));
+  const cy0 = Math.max(0, Math.min(EMBED_GRID_SIZE - 1, y0));
+  const cy1 = Math.max(0, Math.min(EMBED_GRID_SIZE - 1, y0 + 1));
+  const v00 = grid[cy0 * EMBED_GRID_SIZE + cx0];
+  const v10 = grid[cy0 * EMBED_GRID_SIZE + cx1];
+  const v01 = grid[cy1 * EMBED_GRID_SIZE + cx0];
+  const v11 = grid[cy1 * EMBED_GRID_SIZE + cx1];
+  const top = v00 + (v10 - v00) * fx;
+  const bottom = v01 + (v11 - v01) * fx;
+  return top + (bottom - top) * fy;
 }
 
 function hexToBits(hex) {
@@ -90,14 +155,13 @@ function hammingDistance(hexA, hexB) {
 function embedInvisibleCode(rawPixels, width, height, channels, code) {
   const signedBits = hexToBits(code).map((b) => (b === 1 ? 1 : -1));
   const carriers = buildCarriers(getSecretSeed());
+  const deltaGrid = computeDeltaGrid(carriers, signedBits);
   let maxAbsDelta = 0;
   for (let y = 0; y < height; y++) {
     const ny = y / height;
     for (let x = 0; x < width; x++) {
       const nx = x / width;
-      let delta = 0;
-      for (let i = 0; i < TOTAL_BITS; i++) delta += signedBits[i] * carrierValue(carriers[i], nx, ny);
-      delta *= AMPLITUDE;
+      const delta = sampleDeltaGrid(deltaGrid, nx, ny);
       maxAbsDelta = Math.max(maxAbsDelta, Math.abs(delta));
       const base = (y * width + x) * channels;
       for (let c = 0; c < RGB_CHANNELS; c++) {
@@ -118,23 +182,34 @@ async function extractInvisibleCode(imageBuffer) {
 
   const { width, height, channels } = info;
   const carriers = buildCarriers(getSecretSeed());
+  const { cosX, sinX, cosYP, sinYP } = buildTrigTables(carriers, width, height);
+  const normalize = 1 / Math.sqrt(TONES_PER_BIT);
 
-  const correlation = new Array(TOTAL_BITS).fill(0);
+  const rowCosYP = new Float64Array(TOTAL_TONES);
+  const rowSinYP = new Float64Array(TOTAL_TONES);
+  const correlation = new Float64Array(TOTAL_BITS);
+
   for (let y = 0; y < height; y++) {
-    const ny = y / height;
+    for (let t = 0; t < TOTAL_TONES; t++) {
+      rowCosYP[t] = cosYP[t * height + y];
+      rowSinYP[t] = sinYP[t * height + y];
+    }
     for (let x = 0; x < width; x++) {
-      const nx = x / width;
       const base = (y * width + x) * channels;
       let luma = 0;
       for (let c = 0; c < RGB_CHANNELS; c++) luma += data[base + c];
       luma /= RGB_CHANNELS;
-      for (let i = 0; i < TOTAL_BITS; i++) correlation[i] += luma * carrierValue(carriers[i], nx, ny);
+      for (let t = 0; t < TOTAL_TONES; t++) {
+        const xBase = t * width + x;
+        const carrier = (cosX[xBase] * rowCosYP[t] - sinX[xBase] * rowSinYP[t]) * normalize;
+        correlation[carriers.bitOf[t]] += luma * carrier;
+      }
     }
   }
 
   const pixelCount = width * height;
-  const recoveredBits = correlation.map((c) => (c > 0 ? 1 : 0));
-  const confidence = correlation.reduce((sum, c) => sum + Math.abs(c) / pixelCount, 0) / TOTAL_BITS;
+  const recoveredBits = Array.from(correlation, (c) => (c > 0 ? 1 : 0));
+  const confidence = Array.from(correlation).reduce((sum, c) => sum + Math.abs(c) / pixelCount, 0) / TOTAL_BITS;
   return { code: bitsToHex(recoveredBits), confidence };
 }
 
