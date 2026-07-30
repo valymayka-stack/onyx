@@ -43,6 +43,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
 export default function CreateCreatorForm() {
   const [email, setEmail] = useState("");
   const [handle, setHandle] = useState("");
+  const [subjectName, setSubjectName] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [password, setPassword] = useState(() => generatePassword());
@@ -64,6 +65,7 @@ export default function CreateCreatorForm() {
         email: email.trim(),
         password,
         handle: handle.trim(),
+        subjectName: subjectName.trim(),
         displayName: displayName.trim() || undefined,
         bio: bio.trim() || undefined,
       }),
@@ -79,6 +81,7 @@ export default function CreateCreatorForm() {
     setCreated({ email: data.email, password, handle: data.handle });
     setEmail("");
     setHandle("");
+    setSubjectName("");
     setDisplayName("");
     setBio("");
     setPassword(generatePassword());
@@ -92,9 +95,10 @@ export default function CreateCreatorForm() {
       <CardContent className="flex flex-col gap-4">
         <p className="text-sm text-muted-foreground">
           Sin registro público — esta es la única forma de crear una cuenta de creadora.
-          A diferencia de los fans, usa un correo real: la creadora necesita poder
-          iniciar sesión ella misma para configurar su 2FA y registrar su propio
-          consentimiento.
+          A diferencia de los fans, usa un correo real: la creadora todavía necesita
+          poder iniciar sesión ella misma para configurar su 2FA. El consentimiento se
+          registra aquí mismo, a tu nombre como administrador — se asume que ya lo
+          tienes (contrato, acuerdo firmado, etc.) antes de crear la cuenta.
         </p>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -119,6 +123,21 @@ export default function CreateCreatorForm() {
               onChange={(e) => setHandle(e.target.value)}
               placeholder="mi-creadora"
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="creator-subject-name">Nombre de quien consiente</Label>
+            <Input
+              id="creator-subject-name"
+              required
+              value={subjectName}
+              onChange={(e) => setSubjectName(e.target.value)}
+              placeholder="Nombre legal completo"
+            />
+            <p className="text-xs text-muted-foreground">
+              Queda registrado como el consentimiento de contenido de esta cuenta
+              (Ley Olimpia), a tu nombre como administrador que la dio de alta.
+            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">

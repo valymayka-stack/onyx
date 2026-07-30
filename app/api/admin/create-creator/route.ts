@@ -19,13 +19,15 @@ export async function POST(request: NextRequest) {
   const email = typeof body?.email === "string" ? body.email : "";
   const password = typeof body?.password === "string" ? body.password : "";
   const handle = typeof body?.handle === "string" ? body.handle : "";
+  const subjectName =
+    typeof body?.subjectName === "string" ? body.subjectName : "";
   const displayName =
     typeof body?.displayName === "string" ? body.displayName : undefined;
   const bio = typeof body?.bio === "string" ? body.bio : undefined;
 
-  if (!email || !password || !handle) {
+  if (!email || !password || !handle || !subjectName) {
     return NextResponse.json(
-      { error: "email, password y handle son requeridos" },
+      { error: "email, password, handle y subjectName son requeridos" },
       { status: 400 },
     );
   }
@@ -35,6 +37,7 @@ export async function POST(request: NextRequest) {
       email,
       password,
       handle,
+      subjectName,
       displayName,
       bio,
     });
