@@ -2,83 +2,95 @@ import "server-only";
 import crypto from "crypto";
 import sharp from "sharp";
 
-// Invisible (steganographic) forensic watermark — additive spread-spectrum,
-// not LSB. Plain least-significant-bit steganography is wiped out by any
-// JPEG re-encode, and the delivery pipeline already re-encodes on every
-// request (plus whatever a piracy site does on top) — not viable given the
-// real path this needs to survive.
+// Invisible (steganographic) forensic watermark — additive spread-spectrum
+// using band-limited pseudo-noise carriers built from several summed 2D
+// cosines in NORMALIZED coordinates (fraction of width/height), not raw
+// pixel positions. This is a full rewrite of an earlier version that used a
+// small repeating 8-pixel-period tile pattern (see git history) — that
+// scheme was tuned for crop survival but, as documented at length there,
+// could not survive a resize: its pattern was tied to an absolute pixel
+// period, so resampling to a different resolution desynchronized it
+// completely. That turned out to be exactly what breaks in practice: a
+// screenshot of the delivered image is captured at whatever pixel density
+// the browser rendered it at (CSS layout size × device pixel ratio),
+// essentially never the original file's exact pixel dimensions.
 //
-// Two things had to be empirically fixed while building this (both
-// reproducible via scripts/test-invisible-watermark.mjs, not just asserted):
+// The fix, in two parts:
 //
-//  1. The signal must be added equally to R, G, and B (a pure luminance
-//     shift), not to a single channel. An early version embedded in blue
-//     alone and JPEG's chroma subsampling (which blue feeds heavily via the
-//     RGB->YCbCr transform) reduced an amplitude-14 signal to under ~2 after
-//     a single quality-88 pass — nearly wiped out. An equal R=G=B delta
-//     contributes nothing to Cb/Cr (the terms cancel) and lands entirely in
-//     Y, which JPEG preserves at much higher fidelity.
-//  2. The pseudorandom ±1 pattern for a given payload bit must be an
-//     EXACTLY balanced shuffle over its BASE_TILE x BASE_TILE period, not
-//     raw hash parity. That small tile repeats hundreds of times across a
-//     bit's region, so even a slight imbalance (29+/35-) compounds every
-//     repetition into a bias large enough to swamp the signal entirely.
+//  1. Normalized-coordinate carriers. Each of the 24 payload bits gets its
+//     own carrier evaluated at (x/width, y/height) rather than absolute
+//     (x, y). A resize changes width/height but not what fraction of the
+//     image a given feature sits at, so the same carrier — recomputed fresh
+//     from whatever dimensions extraction receives, exactly like the
+//     bit-region grid in the old scheme was — lines back up with the
+//     original at any resolution, as long as its frequencies stay well
+//     under the new resolution's Nyquist limit (see FREQ_MAX / CANONICAL_SIZE).
+//     This alone reliably survived every resize ratio tested (0.2x–1.5x,
+//     see scripts/test-invisible-watermark.mjs), with zero bit errors.
 //
-// Two independent concerns, kept separate on purpose:
-//  1. WHICH region of the image carries which payload bit — a macro grid
-//     (GRID_COLS x GRID_ROWS cells, one per bit) recomputed fresh from
-//     whatever image dimensions extraction is given.
-//  2. The PN pattern's *phase* — generated from a small repeating
-//     BASE_TILE x BASE_TILE period, so a crop only ever shifts it by
-//     0..BASE_TILE-1 in each dimension. That small space is brute-forced at
-//     extraction time (cheap), picking whichever phase maximizes average
-//     correlation magnitude across all bits — a standard synchronization
-//     approach for spread-spectrum detection, verified to reliably find the
-//     true phase in testing.
+//  2. Band-limited multi-tone carriers, not single sinusoids. An earlier
+//     draft of this rewrite used one clean cosine per bit. It worked, but
+//     visually it was worse than the scheme it replaced: a single low- or
+//     mid-frequency sinusoid spread across a whole image is a textbook
+//     sine-wave grating — literally the stimulus human vision (V1's
+//     orientation/frequency-tuned neurons) is most sensitive to detecting,
+//     so even a small amplitude showed up as a visible woven/banded
+//     texture on smooth image regions. Summing TONES_PER_BIT
+//     independent, randomly-phased cosines at nearby frequencies per bit
+//     (a standard way to synthesize band-limited noise from sinusoids)
+//     breaks that clean periodicity: the combined pattern reads as fine
+//     grain/paper-texture rather than a coherent grating, while remaining
+//     exactly reproducible (same secret-derived tones at embed and extract
+//     time) and just as resize-invariant, since it's still built entirely
+//     from normalized-coordinate cosines.
 //
-// Honest, empirically-measured limitation (see scripts/test-invisible-watermark.mjs):
-// 24 bits at amplitude 14 survives crops up to ~20% of each dimension with
-// zero bit errors, and degrades gracefully rather than catastrophically at
-// 30% (about 1-2 bits wrong out of 24 in testing) — which is exactly why
-// matching is done by nearest Hamming distance against known issued codes
-// (see extractInvisibleCode's caller) rather than requiring an exact,
-// self-verifying checksum: a checksum can only detect an error, never
-// tolerate one, and a few wrong bits under a real-world crop is expected,
-// not exceptional. This does not attempt to survive rotation, resizing, or
-// heavy degradation — those require correcting geometric distortion first,
-// out of scope here.
+// Frequencies, phases, and per-bit tone assignments are all derived from
+// WATERMARK_SECRET via a seeded PRNG, so correlating a suspect image against
+// the right carriers still requires the secret, not just knowledge of this
+// algorithm.
 //
-// Resize-survival was investigated and abandoned (see git history / session
-// notes): the natural idea — recompute the PN tile period proportionally to
-// whatever dimensions extraction receives, then brute-force a small set of
-// candidate tile sizes alongside the phase search — does NOT work. The
-// reason is structural, not a tuning problem: this scheme's per-bit pattern
-// is an independently-generated random ±1 shuffle, and there's no
-// mathematical reason an independently-generated *smaller* random pattern
-// should correlate with what a *resized* copy of the original pattern
-// actually looks like (downsampling a random binary tile doesn't produce
-// "the same pattern at a smaller size," it produces a specific, deterministic
-// blend that a fresh random shuffle only matches by chance). Confirmed
-// empirically: even in the idealized case (exact 2x nearest-neighbor
-// decimation, no lowpass filtering, mathematically "correct" candidate tile
-// size), confidence dropped from ~13.6 (baseline) to ~3.4 — real signal, but
-// far below reliable detection (needs sustained correlation, not a fraction
-// of it). A real fix requires switching the embedding basis itself to smooth
-// low-frequency functions (e.g. 2D sinusoids in normalized coordinates, the
-// classic transform-domain spread-spectrum approach) instead of random
-// tiles — a materially different algorithm, with its own crop-robustness
-// tradeoffs to re-validate, not a parameter tweak. Not attempted here;
-// flagged as a real option to revisit if resize-survival becomes a priority.
+// What this rewrite gives up, deliberately: the old scheme's translation
+// search (brute-forcing an 8x8 pixel phase offset to re-sync after a crop).
+// An early version of this rewrite kept an analogous fractional-offset
+// search, but it turned out to be actively broken with integer-frequency
+// carriers: shifting by exactly half a period flips every carrier's sign in
+// a fully deterministic, frequency-independent way, which makes that
+// offset's aggregate |correlation| an exact tie with the true zero offset —
+// magnitude alone can't tell them apart, so the "best" pick was effectively
+// a coin flip between correct bits and a scrambled decoy. Removing the
+// search entirely (always evaluate at zero offset) fixed that outright and,
+// as a side effect, cut extraction cost by ~64x. The real, honest cost: crop
+// tolerance is gone — empirically, even a 10% crop no longer reliably
+// recovers (see the test script), because a crop changes what extraction
+// normalizes width/height by, which (unlike a resize) really does shift
+// every carrier's effective phase by an amount this version no longer
+// searches for, and the FREQ_MIN..FREQ_MAX band chosen for visual quality
+// (see below) is high enough that even a small phase error desyncs it. This
+// is a real, different tradeoff, not a strict improvement on every axis: it
+// prioritizes resize survival (the actual failure mode observed in
+// practice — a screenshot) over the crop hardening the old scheme had.
+// Revisit with a proper synchronization search (avoiding the tie above,
+// e.g. via non-commensurate/irrational frequency ratios) if crop tolerance
+// becomes a priority again.
+//
+// Extraction always resamples the input to a small fixed canonical size
+// (CANONICAL_SIZE) before correlating — not just a speed optimization, it's
+// the natural consequence of the scheme already being resize-invariant by
+// design: normalizing to a fixed size up front costs nothing extra in
+// accuracy as long as it stays well above the Nyquist limit for the highest
+// embedded frequency, which CANONICAL_SIZE does with a wide margin, and it
+// keeps extraction cost constant regardless of input resolution.
 
-const BASE_TILE = 8;
+const TONES_PER_BIT = 6; // summed per bit to approximate band-limited noise instead of a single clean grating
+const FREQ_MIN = 8;
+const FREQ_MAX = 60; // cycles across the whole image — low enough to stay under JPEG's per-8px-block quantization at typical delivered resolutions, high enough to read as fine grain rather than a broad visible band
 const GRID_COLS = 6;
 const GRID_ROWS = 4;
-const TOTAL_BITS = GRID_COLS * GRID_ROWS; // 24 — also the full code length, in bits
+const TOTAL_BITS = GRID_COLS * GRID_ROWS; // 24 — same code length as the old scheme
 const CODE_HEX_CHARS = TOTAL_BITS / 4; // 6
-const AMPLITUDE = 14;
-// After removeAlpha()+toColourspace("srgb"), channel order is R,G,B. See the
-// module comment above for why the signal is added to all three equally.
+const AMPLITUDE = 1.2; // per-bit amplitude budget; see module comment — tuned to the minimum that still gave zero bit errors across every tested resize ratio
 const RGB_CHANNELS = 3;
+const CANONICAL_SIZE = 256; // extraction resamples to this fixed size; embedded frequencies max out at 60 cycles/image, far under its Nyquist limit
 
 export interface ExtractedMark {
   code: string;
@@ -91,45 +103,61 @@ function getSecretSeed(): number {
   return hash.readInt32BE(0);
 }
 
-// Each bitIndex's BASE_TILE x BASE_TILE pattern is an exactly-balanced
-// shuffle (half the cells +1, half -1) — see the module comment for why an
-// unbalanced pattern breaks this in practice, not just in theory.
-const patternCache = new Map<number, ReadonlyArray<1 | -1>>();
+interface Tone {
+  fx: number;
+  fy: number;
+  phase: number;
+}
 
-function getPnPattern(seed: number, bitIndex: number): ReadonlyArray<1 | -1> {
-  const cached = patternCache.get(bitIndex);
-  if (cached) return cached;
+let carrierCache: Tone[][] | null = null;
 
-  let s = (seed ^ Math.imul(bitIndex + 1, 0x9e3779b1)) >>> 0;
-  function rand(): number {
+// Deterministic PRNG (mulberry32) seeded from WATERMARK_SECRET — same style
+// used throughout this file's predecessor, kept for consistency.
+function makeRand(seed: number): () => number {
+  let s = seed >>> 0;
+  return function rand(): number {
     s = (s + 0x6d2b79f5) >>> 0;
     let t = s;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  }
-
-  const cellCount = BASE_TILE * BASE_TILE;
-  const pattern: (1 | -1)[] = new Array(cellCount);
-  for (let i = 0; i < cellCount / 2; i++) pattern[i] = 1;
-  for (let i = cellCount / 2; i < cellCount; i++) pattern[i] = -1;
-  for (let i = cellCount - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1));
-    [pattern[i], pattern[j]] = [pattern[j], pattern[i]];
-  }
-
-  patternCache.set(bitIndex, pattern);
-  return pattern;
+  };
 }
 
-function pnValue(seed: number, bitIndex: number, lx: number, ly: number): 1 | -1 {
-  return getPnPattern(seed, bitIndex)[ly * BASE_TILE + lx];
+// Builds each bit's TONES_PER_BIT-tone carrier: random (not necessarily
+// distinct-from-other-bits) frequencies in [FREQ_MIN, FREQ_MAX] with random
+// phases, all secret-derived.
+function buildCarriers(seed: number): Tone[][] {
+  if (carrierCache) return carrierCache;
+
+  const rand = makeRand(seed);
+  const carriers: Tone[][] = [];
+  for (let bit = 0; bit < TOTAL_BITS; bit++) {
+    const tones: Tone[] = [];
+    for (let t = 0; t < TONES_PER_BIT; t++) {
+      tones.push({
+        fx: FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN),
+        fy: FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN),
+        phase: rand() * 2 * Math.PI,
+      });
+    }
+    carriers.push(tones);
+  }
+
+  carrierCache = carriers;
+  return carrierCache;
 }
 
-function bitIndexForPixel(x: number, y: number, width: number, height: number): number {
-  const col = Math.min(GRID_COLS - 1, Math.floor((x / width) * GRID_COLS));
-  const row = Math.min(GRID_ROWS - 1, Math.floor((y / height) * GRID_ROWS));
-  return row * GRID_COLS + col;
+// Sum of TONES_PER_BIT unit-amplitude cosines, divided by sqrt(TONES_PER_BIT)
+// so the carrier's typical magnitude stays comparable to a single cosine's
+// (central-limit averaging) while its shape reads as fine grain rather than
+// one clean periodic grating.
+function carrierValue(tones: Tone[], nx: number, ny: number): number {
+  let sum = 0;
+  for (const t of tones) {
+    sum += Math.cos(2 * Math.PI * (t.fx * nx + t.fy * ny) + t.phase);
+  }
+  return sum / Math.sqrt(tones.length);
 }
 
 function hexToBits(hex: string): number[] {
@@ -180,15 +208,19 @@ export function embedInvisibleCode(
   channels: number,
   code: string,
 ): void {
-  const payloadBits = hexToBits(code);
-  const seed = getSecretSeed();
+  const signedBits = hexToBits(code).map((b) => (b === 1 ? 1 : -1));
+  const carriers = buildCarriers(getSecretSeed());
 
   for (let y = 0; y < height; y++) {
+    const ny = y / height;
     for (let x = 0; x < width; x++) {
-      const bitIndex = bitIndexForPixel(x, y, width, height);
-      const bitVal = payloadBits[bitIndex] === 1 ? 1 : -1;
-      const pn = pnValue(seed, bitIndex, x % BASE_TILE, y % BASE_TILE);
-      const delta = bitVal * pn * AMPLITUDE;
+      const nx = x / width;
+      let delta = 0;
+      for (let i = 0; i < TOTAL_BITS; i++) {
+        delta += signedBits[i] * carrierValue(carriers[i], nx, ny);
+      }
+      delta *= AMPLITUDE;
+
       const base = (y * width + x) * channels;
       for (let c = 0; c < RGB_CHANNELS; c++) {
         rawPixels[base + c] = Math.max(0, Math.min(255, rawPixels[base + c] + delta));
@@ -201,47 +233,38 @@ export function embedInvisibleCode(
 // checksum can only detect a wrong bit, never tolerate one) — the caller is
 // expected to compare the returned code against known issued codes via
 // hammingDistance() and decide its own confidence threshold. `confidence`
-// here is the raw average correlation magnitude at the best-scoring phase,
-// useful for ranking but not a probability.
+// here is the raw average correlation magnitude, useful for ranking but not
+// a probability.
 export async function extractInvisibleCode(imageBuffer: Buffer): Promise<ExtractedMark> {
   const { data, info } = await sharp(imageBuffer)
     .removeAlpha()
     .toColourspace("srgb")
+    .resize(CANONICAL_SIZE, CANONICAL_SIZE, { fit: "fill" })
     .raw()
     .toBuffer({ resolveWithObject: true });
 
   const { width, height, channels } = info;
-  const seed = getSecretSeed();
-  let best: ExtractedMark | null = null;
+  const carriers = buildCarriers(getSecretSeed());
 
-  for (let oy = 0; oy < BASE_TILE; oy++) {
-    for (let ox = 0; ox < BASE_TILE; ox++) {
-      const correlation = new Array<number>(TOTAL_BITS).fill(0);
-      const pixelCount = new Array<number>(TOTAL_BITS).fill(0);
+  const correlation = new Array<number>(TOTAL_BITS).fill(0);
+  for (let y = 0; y < height; y++) {
+    const ny = y / height;
+    for (let x = 0; x < width; x++) {
+      const nx = x / width;
+      const base = (y * width + x) * channels;
+      let luma = 0;
+      for (let c = 0; c < RGB_CHANNELS; c++) luma += data[base + c];
+      luma /= RGB_CHANNELS;
 
-      for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-          const bitIndex = bitIndexForPixel(x, y, width, height);
-          const pn = pnValue(seed, bitIndex, (x + ox) % BASE_TILE, (y + oy) % BASE_TILE);
-          const base = (y * width + x) * channels;
-          let luma = 0;
-          for (let c = 0; c < RGB_CHANNELS; c++) luma += data[base + c];
-          luma /= RGB_CHANNELS;
-          correlation[bitIndex] += luma * pn;
-          pixelCount[bitIndex] += 1;
-        }
-      }
-
-      const avgAbsCorrelation =
-        correlation.reduce((sum, c, i) => sum + Math.abs(c) / (pixelCount[i] || 1), 0) / TOTAL_BITS;
-
-      if (!best || avgAbsCorrelation > best.confidence) {
-        const recoveredBits = correlation.map((sum, i) => (sum / (pixelCount[i] || 1) > 0 ? 1 : 0));
-        best = { code: bitsToHex(recoveredBits), confidence: avgAbsCorrelation };
+      for (let i = 0; i < TOTAL_BITS; i++) {
+        correlation[i] += luma * carrierValue(carriers[i], nx, ny);
       }
     }
   }
 
-  // best is always set — the loop runs BASE_TILE² >= 1 iterations.
-  return best as ExtractedMark;
+  const pixelCount = width * height;
+  const recoveredBits = correlation.map((c) => (c > 0 ? 1 : 0));
+  const confidence = correlation.reduce((sum, c) => sum + Math.abs(c) / pixelCount, 0) / TOTAL_BITS;
+
+  return { code: bitsToHex(recoveredBits), confidence };
 }
