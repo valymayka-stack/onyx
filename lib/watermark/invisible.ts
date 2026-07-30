@@ -103,13 +103,18 @@ function getSecretSeed(): number {
   return hash.readInt32BE(0);
 }
 
-interface Tone {
-  fx: number;
-  fy: number;
-  phase: number;
+// Flat (not grouped by bit) so the hot pixel loop below can iterate one flat
+// array instead of TOTAL_BITS separate small arrays — see FlatCarriers.
+const TOTAL_TONES = TOTAL_BITS * TONES_PER_BIT;
+
+interface FlatCarriers {
+  fx: Float64Array;
+  fy: Float64Array;
+  phase: Float64Array;
+  bitOf: Int32Array; // which of the 24 bits each flat tone belongs to
 }
 
-let carrierCache: Tone[][] | null = null;
+let carrierCache: FlatCarriers | null = null;
 
 // Deterministic PRNG (mulberry32) seeded from WATERMARK_SECRET — same style
 // used throughout this file's predecessor, kept for consistency.
@@ -126,38 +131,73 @@ function makeRand(seed: number): () => number {
 
 // Builds each bit's TONES_PER_BIT-tone carrier: random (not necessarily
 // distinct-from-other-bits) frequencies in [FREQ_MIN, FREQ_MAX] with random
-// phases, all secret-derived.
-function buildCarriers(seed: number): Tone[][] {
+// phases, all secret-derived. Flattened across all bits up front so both the
+// embed and extract hot loops can walk one flat array of TOTAL_TONES entries.
+function buildCarriers(seed: number): FlatCarriers {
   if (carrierCache) return carrierCache;
 
   const rand = makeRand(seed);
-  const carriers: Tone[][] = [];
+  const fx = new Float64Array(TOTAL_TONES);
+  const fy = new Float64Array(TOTAL_TONES);
+  const phase = new Float64Array(TOTAL_TONES);
+  const bitOf = new Int32Array(TOTAL_TONES);
+
+  let flat = 0;
   for (let bit = 0; bit < TOTAL_BITS; bit++) {
-    const tones: Tone[] = [];
     for (let t = 0; t < TONES_PER_BIT; t++) {
-      tones.push({
-        fx: FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN),
-        fy: FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN),
-        phase: rand() * 2 * Math.PI,
-      });
+      fx[flat] = FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN);
+      fy[flat] = FREQ_MIN + rand() * (FREQ_MAX - FREQ_MIN);
+      phase[flat] = rand() * 2 * Math.PI;
+      bitOf[flat] = bit;
+      flat++;
     }
-    carriers.push(tones);
   }
 
-  carrierCache = carriers;
+  carrierCache = { fx, fy, phase, bitOf };
   return carrierCache;
 }
 
-// Sum of TONES_PER_BIT unit-amplitude cosines, divided by sqrt(TONES_PER_BIT)
-// so the carrier's typical magnitude stays comparable to a single cosine's
-// (central-limit averaging) while its shape reads as fine grain rather than
-// one clean periodic grating.
-function carrierValue(tones: Tone[], nx: number, ny: number): number {
-  let sum = 0;
-  for (const t of tones) {
-    sum += Math.cos(2 * Math.PI * (t.fx * nx + t.fy * ny) + t.phase);
+// Per-axis trig tables for every flat tone, evaluated once per image instead
+// of once per pixel. cos(2π(fx·x/w + fy·y/h) + phase) factors as
+// cos(A+B) = cosA·cosB - sinA·sinB where A = 2π·fx·x/w (x-only) and
+// B = 2π·fy·y/h + phase (y-only), so precomputing both halves turns the
+// per-pixel-per-tone cost into 2 multiplies and a subtract instead of a
+// transcendental Math.cos() call — the difference between an embed taking
+// tens of seconds (blocking the whole Node process, and everyone else's
+// requests with it — see git history for the production outage this caused)
+// and one taking a fraction of a second, for the exact same output.
+interface TrigTables {
+  cosX: Float64Array; // [tone*width + x]
+  sinX: Float64Array;
+  cosYP: Float64Array; // [tone*height + y], phase already folded in
+  sinYP: Float64Array;
+}
+
+function buildTrigTables(carriers: FlatCarriers, width: number, height: number): TrigTables {
+  const cosX = new Float64Array(TOTAL_TONES * width);
+  const sinX = new Float64Array(TOTAL_TONES * width);
+  const cosYP = new Float64Array(TOTAL_TONES * height);
+  const sinYP = new Float64Array(TOTAL_TONES * height);
+
+  for (let t = 0; t < TOTAL_TONES; t++) {
+    const fx = carriers.fx[t];
+    const fy = carriers.fy[t];
+    const phase = carriers.phase[t];
+    const xBase = t * width;
+    for (let x = 0; x < width; x++) {
+      const a = 2 * Math.PI * fx * (x / width);
+      cosX[xBase + x] = Math.cos(a);
+      sinX[xBase + x] = Math.sin(a);
+    }
+    const yBase = t * height;
+    for (let y = 0; y < height; y++) {
+      const b = 2 * Math.PI * fy * (y / height) + phase;
+      cosYP[yBase + y] = Math.cos(b);
+      sinYP[yBase + y] = Math.sin(b);
+    }
   }
-  return sum / Math.sqrt(tones.length);
+
+  return { cosX, sinX, cosYP, sinYP };
 }
 
 function hexToBits(hex: string): number[] {
@@ -210,16 +250,32 @@ export function embedInvisibleCode(
 ): void {
   const signedBits = hexToBits(code).map((b) => (b === 1 ? 1 : -1));
   const carriers = buildCarriers(getSecretSeed());
+  const { cosX, sinX, cosYP, sinYP } = buildTrigTables(carriers, width, height);
+
+  // Per-tone weight folds in this delivery's bit value, the shared
+  // amplitude, and the sqrt(TONES_PER_BIT) averaging all at once, so the
+  // pixel loop below is a single flat multiply-accumulate over tones.
+  const weight = new Float64Array(TOTAL_TONES);
+  const normalize = AMPLITUDE / Math.sqrt(TONES_PER_BIT);
+  for (let t = 0; t < TOTAL_TONES; t++) {
+    weight[t] = signedBits[carriers.bitOf[t]] * normalize;
+  }
+
+  const rowCosYP = new Float64Array(TOTAL_TONES);
+  const rowSinYP = new Float64Array(TOTAL_TONES);
 
   for (let y = 0; y < height; y++) {
-    const ny = y / height;
+    for (let t = 0; t < TOTAL_TONES; t++) {
+      rowCosYP[t] = cosYP[t * height + y];
+      rowSinYP[t] = sinYP[t * height + y];
+    }
+
     for (let x = 0; x < width; x++) {
-      const nx = x / width;
       let delta = 0;
-      for (let i = 0; i < TOTAL_BITS; i++) {
-        delta += signedBits[i] * carrierValue(carriers[i], nx, ny);
+      for (let t = 0; t < TOTAL_TONES; t++) {
+        const xBase = t * width + x;
+        delta += weight[t] * (cosX[xBase] * rowCosYP[t] - sinX[xBase] * rowSinYP[t]);
       }
-      delta *= AMPLITUDE;
 
       const base = (y * width + x) * channels;
       for (let c = 0; c < RGB_CHANNELS; c++) {
@@ -245,26 +301,36 @@ export async function extractInvisibleCode(imageBuffer: Buffer): Promise<Extract
 
   const { width, height, channels } = info;
   const carriers = buildCarriers(getSecretSeed());
+  const { cosX, sinX, cosYP, sinYP } = buildTrigTables(carriers, width, height);
+  const normalize = 1 / Math.sqrt(TONES_PER_BIT);
 
-  const correlation = new Array<number>(TOTAL_BITS).fill(0);
+  const rowCosYP = new Float64Array(TOTAL_TONES);
+  const rowSinYP = new Float64Array(TOTAL_TONES);
+  const correlation = new Float64Array(TOTAL_BITS);
+
   for (let y = 0; y < height; y++) {
-    const ny = y / height;
+    for (let t = 0; t < TOTAL_TONES; t++) {
+      rowCosYP[t] = cosYP[t * height + y];
+      rowSinYP[t] = sinYP[t * height + y];
+    }
+
     for (let x = 0; x < width; x++) {
-      const nx = x / width;
       const base = (y * width + x) * channels;
       let luma = 0;
       for (let c = 0; c < RGB_CHANNELS; c++) luma += data[base + c];
       luma /= RGB_CHANNELS;
 
-      for (let i = 0; i < TOTAL_BITS; i++) {
-        correlation[i] += luma * carrierValue(carriers[i], nx, ny);
+      for (let t = 0; t < TOTAL_TONES; t++) {
+        const xBase = t * width + x;
+        const carrier = (cosX[xBase] * rowCosYP[t] - sinX[xBase] * rowSinYP[t]) * normalize;
+        correlation[carriers.bitOf[t]] += luma * carrier;
       }
     }
   }
 
   const pixelCount = width * height;
-  const recoveredBits = correlation.map((c) => (c > 0 ? 1 : 0));
-  const confidence = correlation.reduce((sum, c) => sum + Math.abs(c) / pixelCount, 0) / TOTAL_BITS;
+  const recoveredBits = Array.from(correlation, (c) => (c > 0 ? 1 : 0));
+  const confidence = Array.from(correlation).reduce((sum, c) => sum + Math.abs(c) / pixelCount, 0) / TOTAL_BITS;
 
   return { code: bitsToHex(recoveredBits), confidence };
 }
