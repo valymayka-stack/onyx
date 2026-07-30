@@ -23,7 +23,7 @@ export default async function ManageCollectionPage({
 
   const { data: collection } = await supabase
     .from("content_collections")
-    .select("id, title, description, price_cents, cover_item_id")
+    .select("id, title, description, cover_item_id")
     .eq("id", collectionId)
     .eq("creator_id", user!.id)
     .maybeSingle();
@@ -71,7 +71,7 @@ export default async function ManageCollectionPage({
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-8">
       <AppHeader
         title={collection.title}
-        subtitle={`$${(collection.price_cents / 100).toFixed(2)} · ${items?.length ?? 0} foto(s)`}
+        subtitle={`${items?.length ?? 0} foto(s)`}
       />
 
       <section className="flex flex-col gap-3">
@@ -114,7 +114,6 @@ export default async function ManageCollectionPage({
         collectionId={collectionId}
         initialTitle={collection.title}
         initialDescription={collection.description}
-        initialPriceCents={collection.price_cents}
       />
     </main>
   );

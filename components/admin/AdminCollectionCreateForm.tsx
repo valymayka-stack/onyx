@@ -31,7 +31,6 @@ export default function AdminCollectionCreateForm({
   const [creatorId, setCreatorId] = useState(creators[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [priceDollars, setPriceDollars] = useState("");
   const [cover, setCover] = useState<File | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -56,16 +55,9 @@ export default function AdminCollectionCreateForm({
 
     const supabase = createClient();
 
-    const priceCents = Math.round(parseFloat(priceDollars) * 100);
-    if (!Number.isFinite(priceCents) || priceCents <= 0) {
-      setLoading(false);
-      setError("Precio inválido.");
-      return;
-    }
-
     const { data: newCollection, error: collectionError } = await supabase
       .from("content_collections")
-      .insert({ creator_id: creatorId, title, description, price_cents: priceCents })
+      .insert({ creator_id: creatorId, title, description })
       .select("id")
       .single();
 
@@ -166,19 +158,6 @@ export default function AdminCollectionCreateForm({
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="col-desc">Descripción</Label>
             <Textarea id="col-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="col-price">Precio (USD)</Label>
-            <Input
-              id="col-price"
-              type="number"
-              min="0.01"
-              step="0.01"
-              required
-              value={priceDollars}
-              onChange={(e) => setPriceDollars(e.target.value)}
-            />
           </div>
 
           <div className="flex flex-col gap-1.5">

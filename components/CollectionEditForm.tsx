@@ -15,29 +15,20 @@ export default function CollectionEditForm({
   collectionId,
   initialTitle,
   initialDescription,
-  initialPriceCents,
 }: {
   collectionId: string;
   initialTitle: string;
   initialDescription: string | null;
-  initialPriceCents: number;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState(initialDescription ?? "");
-  const [priceDollars, setPriceDollars] = useState((initialPriceCents / 100).toFixed(2));
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-
-    const priceCents = Math.round(parseFloat(priceDollars) * 100);
-    if (!Number.isFinite(priceCents) || priceCents <= 0) {
-      setError("Precio inválido.");
-      return;
-    }
 
     setLoading(true);
     setError(null);
@@ -46,7 +37,7 @@ export default function CollectionEditForm({
     const supabase = createClient();
     const { error: updateError } = await supabase
       .from("content_collections")
-      .update({ title, description, price_cents: priceCents })
+      .update({ title, description })
       .eq("id", collectionId);
 
     setLoading(false);
@@ -78,19 +69,6 @@ export default function CollectionEditForm({
               id="edit-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="edit-price">Precio (USD)</Label>
-            <Input
-              id="edit-price"
-              type="number"
-              min="0.01"
-              step="0.01"
-              required
-              value={priceDollars}
-              onChange={(e) => setPriceDollars(e.target.value)}
             />
           </div>
 

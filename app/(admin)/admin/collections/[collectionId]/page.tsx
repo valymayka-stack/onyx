@@ -31,7 +31,7 @@ export default async function AdminManageCollectionPage({
 
   const { data: collection } = await supabase
     .from("content_collections")
-    .select("id, title, description, price_cents, cover_item_id, creator_id, creators(handle)")
+    .select("id, title, description, cover_item_id, creator_id, creators(handle)")
     .eq("id", collectionId)
     .maybeSingle();
 
@@ -84,7 +84,7 @@ export default async function AdminManageCollectionPage({
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-8">
       <AppHeader
         title={collection.title}
-        subtitle={`@${creator?.handle ?? "—"} · $${(collection.price_cents / 100).toFixed(2)} · ${items?.length ?? 0} foto(s)`}
+        subtitle={`@${creator?.handle ?? "—"} · ${items?.length ?? 0} foto(s)`}
       />
       <AdminNav />
 
@@ -128,7 +128,6 @@ export default async function AdminManageCollectionPage({
         collectionId={collectionId}
         initialTitle={collection.title}
         initialDescription={collection.description}
-        initialPriceCents={collection.price_cents}
       />
     </main>
   );

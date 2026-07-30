@@ -19,7 +19,7 @@ export default async function AdminCollectionsPage() {
   // collection across every creator, not just ones this session owns.
   const { data: collections } = await supabase
     .from("content_collections")
-    .select("id, title, price_cents, is_hidden, creators(handle)")
+    .select("id, title, is_hidden, creators(handle)")
     .order("created_at", { ascending: false });
 
   return (
@@ -62,7 +62,6 @@ export default async function AdminCollectionsPage() {
                   <span className="text-xs text-muted-foreground">
                     @{creator?.handle ?? "—"}
                   </span>
-                  <Badge variant="secondary">${(c.price_cents / 100).toFixed(2)}</Badge>
                   {c.is_hidden && <Badge variant="destructive">oculta</Badge>}
                 </CardContent>
               </Card>

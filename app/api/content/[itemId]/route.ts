@@ -74,14 +74,13 @@ export async function GET(
   const isAdmin = (roles ?? []).some((r) => r.role === "admin");
   const isOwnerCreator = item.creator_id === user.id;
 
-  let hasPurchase = false;
-
   if (item.collection_id && !isAdmin && !isOwnerCreator) {
     // Collection photos have their own, stricter gate: an explicit allowlist
     // grant, independent of any creator-wide subscription. Absent a grant,
     // this collection doesn't exist as far as this fan is concerned — 404,
     // not 403, same "can't distinguish hidden from never-existed" reasoning
-    // already used for is_hidden below.
+    // already used for is_hidden below. A grant unlocks the collection in
+    // full — there's no separate purchase/unlock step.
     const { data: grant } = await admin
       .from("collection_access_grants")
       .select("id")
@@ -91,15 +90,6 @@ export async function GET(
     if (!grant) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
-
-    const { data: purchase } = await admin
-      .from("collection_purchases")
-      .select("id")
-      .eq("collection_id", item.collection_id)
-      .eq("fan_id", user.id)
-      .eq("status", "approved")
-      .maybeSingle();
-    hasPurchase = !!purchase;
   }
 
   let authorized = isAdmin || isOwnerCreator || !!item.collection_id;
@@ -142,26 +132,6 @@ export async function GET(
   }
 
   const originalBuffer = Buffer.from(await fileBlob.arrayBuffer());
-
-  // Collection photo, allowlisted but not purchased, and not the free cover:
-  // an OF-style blurred teaser instead of the full watermarked delivery. No
-  // forensic marking here — a heavily downscaled/blurred preview isn't the
-  // asset worth protecting, so it's not worth the complexity.
-  if (item.collection_id && !item.is_cover && !hasPurchase && !isAdmin && !isOwnerCreator) {
-    const blurred = await sharp(originalBuffer)
-      .resize(500)
-      .blur(20)
-      .jpeg({ quality: 60 })
-      .toBuffer();
-
-    return new NextResponse(new Uint8Array(blurred), {
-      status: 200,
-      headers: {
-        "Content-Type": "image/jpeg",
-        "Cache-Control": "private, no-store",
-      },
-    });
-  }
 
   const {
     data: { session },

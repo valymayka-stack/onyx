@@ -31,7 +31,7 @@ export default async function StudioPage() {
 
   const { data: collections } = await supabase
     .from("content_collections")
-    .select("id, title, price_cents, is_hidden")
+    .select("id, title, is_hidden")
     .eq("creator_id", user!.id)
     .order("created_at", { ascending: false });
 
@@ -61,7 +61,6 @@ export default async function StudioPage() {
                   <Link href={`/studio/collections/${c.id}`} className="flex-1 truncate text-sm">
                     {c.title}
                   </Link>
-                  <Badge variant="secondary">${(c.price_cents / 100).toFixed(2)}</Badge>
                   {c.is_hidden && <Badge variant="destructive">oculta por admin</Badge>}
                 </CardContent>
               </Card>
