@@ -8,10 +8,12 @@ interface BanInput {
   reason: string;
 }
 
-// Shared ban cascade used by both the honeypot download route and the
-// DevTools-detection path in /api/security-events: bans the account, the
-// IP, and the device fingerprint in one pass, logs all three to
-// ban_history, and kills the session immediately (not on next login).
+// Shared ban cascade used by every auto-ban trigger — the client-reported
+// signals in /api/security-events (DevTools, drag/copy/blur, automation,
+// PrintScreen) and the server-side bulk-download check in
+// /api/content/[itemId]: bans the account, the IP, and the device
+// fingerprint in one pass, logs all three to ban_history, and kills the
+// session immediately (not on next login).
 export async function applyBan(
   admin: SupabaseClient,
   { userId, ip, fingerprint, reason }: BanInput,

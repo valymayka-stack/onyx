@@ -14,12 +14,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 // Kept in sync with AUTO_BAN_EVENT_TYPES in app/api/security-events/route.ts
-// (plus honeypot_click and bulk_download_suspected, which ban through their
-// own separate routes rather than that one) — purely for the destructive
-// badge below, so this list drifting out of sync doesn't affect any actual
-// ban decision, just whether this page highlights it correctly.
+// (plus bulk_download_suspected, which bans through its own route in
+// app/api/content/[itemId]/route.ts rather than that one) — purely for the
+// destructive badge below, so this list drifting out of sync doesn't affect
+// any actual ban decision, just whether this page highlights it correctly.
 const BAN_TRIGGERING_EVENTS = new Set([
-  "honeypot_click",
   "devtools_key_blocked",
   "devtools_suspected",
   "drag_blocked",
@@ -35,7 +34,7 @@ export default async function AdminSecurityPage() {
 
   const { data: events } = await supabase
     .from("security_events")
-    .select("id, event_type, user_id, ip, device_fingerprint, created_at")
+    .select("id, event_type, user_id, ip, device_fingerprint, created_at, metadata")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -56,6 +55,7 @@ export default async function AdminSecurityPage() {
                 <TableHead>Usuario</TableHead>
                 <TableHead>IP</TableHead>
                 <TableHead>Fingerprint</TableHead>
+                <TableHead>Detalle</TableHead>
                 <TableHead>Cuándo</TableHead>
               </TableRow>
             </TableHeader>
@@ -81,6 +81,9 @@ export default async function AdminSecurityPage() {
                     <TableCell className="font-mono text-xs">
                       {ev.device_fingerprint ?? "—"}
                     </TableCell>
+                    <TableCell className="max-w-48 truncate font-mono text-xs text-muted-foreground">
+                      {ev.metadata ? JSON.stringify(ev.metadata) : "—"}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {formatDateTime(ev.created_at)}
                     </TableCell>
@@ -89,7 +92,7 @@ export default async function AdminSecurityPage() {
               ) : (
                 <TableRow>
                   <TableCell
-                    colSpan={5}
+                    colSpan={6}
                     className="p-4 text-center text-muted-foreground"
                   >
                     Sin eventos todavía.

@@ -30,8 +30,9 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Banned accounts are signed out globally by the honeypot route, but as a
-  // second layer, also block here in case a stale cookie survives.
+  // Banned accounts are signed out globally by applyBan() at the moment the
+  // ban fires, but as a second layer, also block here in case a stale
+  // cookie survives.
   const { data: profile } = await supabase
     .from("profiles")
     .select("banned_at")
@@ -45,9 +46,11 @@ export async function middleware(request: NextRequest) {
 
   // Every authenticated page response is marked non-cacheable so the
   // browser's back-forward cache (bfcache) never resurrects a page after
-  // the session dies (e.g. right after a honeypot ban) — without this,
+  // the session dies (e.g. right after an auto-ban) — without this,
   // pressing back/forward can show the last-rendered snapshot instead of
-  // re-checking with the server.
+  // re-checking with the server. iOS Safari in particular restores pages
+  // from bfcache far more aggressively than desktop browsers, so this
+  // matters most for a fan on their phone hitting back right after a ban.
   response.headers.set("Cache-Control", "no-store, must-revalidate");
 
   // Mandatory MFA: figure out whether this session still needs to enroll a
