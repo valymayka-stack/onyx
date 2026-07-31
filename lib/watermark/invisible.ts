@@ -335,21 +335,16 @@ function sampleDeltaGrid(grid: Float64Array, nx: number, ny: number): number {
   return top + (bottom - top) * fy;
 }
 
-// Mutates rawPixels in place — call on the raw RGB buffer after the visible
-// watermark is composited but before the final JPEG encode, so there's only
-// one lossy re-encode in the whole pipeline instead of two.
-export function embedInvisibleCode(
+function embedRows(
   rawPixels: Buffer,
   width: number,
-  height: number,
   channels: number,
-  code: string,
+  deltaGrid: Float64Array,
+  height: number,
+  yStart: number,
+  yEnd: number,
 ): void {
-  const signedBits = hexToBits(code).map((b) => (b === 1 ? 1 : -1));
-  const carriers = buildCarriers(getSecretSeed());
-  const deltaGrid = computeDeltaGrid(carriers, signedBits);
-
-  for (let y = 0; y < height; y++) {
+  for (let y = yStart; y < yEnd; y++) {
     const ny = y / height;
     for (let x = 0; x < width; x++) {
       const nx = x / width;
@@ -360,6 +355,54 @@ export function embedInvisibleCode(
         rawPixels[base + c] = Math.max(0, Math.min(255, rawPixels[base + c] + delta));
       }
     }
+  }
+}
+
+// Rows processed per chunk before yielding back to the event loop (see the
+// await below) — small enough that even a large delivered image never blocks
+// the process for more than a couple ms at a stretch, large enough that the
+// per-chunk overhead (one setImmediate round-trip) stays negligible next to
+// the actual pixel work.
+const EMBED_YIELD_EVERY_ROWS = 64;
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+// Mutates rawPixels in place — call on the raw RGB buffer after the visible
+// watermark is composited but before the final JPEG encode, so there's only
+// one lossy re-encode in the whole pipeline instead of two.
+//
+// Async and chunked, not a single tight loop: the grid+upsample rewrite above
+// made embed cost constant regardless of the delivered image's resolution,
+// but "constant" still means real synchronous JS work (tens of ms), and
+// Node's single-threaded event loop stalls on ALL other requests — logins,
+// the feed, security-event posts, everything — for the full duration of one
+// image's embed. Under concurrent traffic (several fans loading photos at
+// once, which is normal, not adversarial) those stalls stack up serially and
+// can make the whole server stop responding even though no single request is
+// slow in isolation. Yielding via setImmediate every EMBED_YIELD_EVERY_ROWS
+// rows lets the event loop service other pending work between chunks instead
+// of monopolizing it for one contiguous stretch — same total CPU cost, but
+// no single request can starve everyone else. This doesn't add real
+// parallelism (still one core, still bounded by total throughput under
+// heavy sustained load) — that's the right next step once concurrent volume
+// actually gets there, via worker_threads or a separate rendering service.
+export async function embedInvisibleCode(
+  rawPixels: Buffer,
+  width: number,
+  height: number,
+  channels: number,
+  code: string,
+): Promise<void> {
+  const signedBits = hexToBits(code).map((b) => (b === 1 ? 1 : -1));
+  const carriers = buildCarriers(getSecretSeed());
+  const deltaGrid = computeDeltaGrid(carriers, signedBits);
+
+  for (let yStart = 0; yStart < height; yStart += EMBED_YIELD_EVERY_ROWS) {
+    const yEnd = Math.min(yStart + EMBED_YIELD_EVERY_ROWS, height);
+    embedRows(rawPixels, width, channels, deltaGrid, height, yStart, yEnd);
+    if (yEnd < height) await yieldToEventLoop();
   }
 }
 

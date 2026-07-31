@@ -187,7 +187,7 @@ export async function GET(
     deliveryCode = generateCode();
   }
 
-  embedInvisibleCode(raw.data, raw.width, raw.height, raw.channels, deliveryCode);
+  await embedInvisibleCode(raw.data, raw.width, raw.height, raw.channels, deliveryCode);
 
   const watermarked = await sharp(raw.data, {
     raw: { width: raw.width, height: raw.height, channels: raw.channels as 3 },
