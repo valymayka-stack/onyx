@@ -8,6 +8,8 @@ import { countRecentAttempts, logAttempt } from "@/lib/security/rateLimiter";
 import { compositeVisibleWatermarkRaw } from "@/lib/watermark/tile";
 import { generateCode, embedInvisibleCode } from "@/lib/watermark/invisible";
 import { getRequestIp } from "@/lib/security/requestIp";
+import { countDistinctItemsRecent, DISTINCT_ITEM_BAN_THRESHOLD } from "@/lib/security/bulkDownloadDetector";
+import { applyBan } from "@/lib/security/banCascade";
 
 const CONTENT_REQUEST_LIMIT_PER_MINUTE = 60;
 
@@ -121,6 +123,28 @@ export async function GET(
       { error: "video delivery not implemented yet" },
       { status: 501 },
     );
+  }
+
+  // Bulk-download detection: no screenshot/DevTools signal can see a script
+  // harvesting every photo this account has access to, since it never
+  // touches a browser tab — this is the one check on the delivery path
+  // itself, independent of anything the client reports.
+  const distinctItemCount = await countDistinctItemsRecent(admin, user.id);
+  if (distinctItemCount >= DISTINCT_ITEM_BAN_THRESHOLD) {
+    await admin.from("security_events").insert({
+      event_type: "bulk_download_suspected",
+      user_id: user.id,
+      ip,
+      user_agent: request.headers.get("user-agent"),
+      metadata: { distinctItemCount },
+    });
+    await applyBan(admin, {
+      userId: user.id,
+      ip,
+      fingerprint: null,
+      reason: "bulk_download_suspected",
+    });
+    return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
   const { data: fileBlob, error: downloadError } = await admin.storage

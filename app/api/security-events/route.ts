@@ -22,15 +22,30 @@ const EVENT_LIMIT_PER_MINUTE = 30;
 //   recorder and came back to click through the photos." Same trade-off as
 //   devtools_suspected: a slow return-and-click after any unrelated blur can
 //   also trigger this.
+// - automation_detected: navigator.webdriver — set by every mainstream
+//   scraping framework (Puppeteer, Selenium, Playwright), never by a real
+//   fan's own browser.
+// - printscreen_key_detected: the one OS-level capture shortcut that does
+//   reach the page (Windows PrintScreen, as a keyup) — Mac's Cmd+Shift+3/4/5
+//   and Windows' Win+Shift+S are intercepted by the OS before any browser
+//   ever sees them, so there's no equivalent event for those.
 // right_click_blocked and save_or_print_blocked stay OUT of this set
 // deliberately — those are things people reach for out of habit far more
 // often than they mean anything by it.
+//
+// bulk_download_suspected is NOT posted through this route — it's detected
+// directly in app/api/content/[itemId]/route.ts (too many distinct items
+// requested in a short window) and bans immediately from there, since it's
+// a signal the delivery path itself observes, not something the client
+// reports.
 const AUTO_BAN_EVENT_TYPES = new Set([
   "devtools_key_blocked",
   "devtools_suspected",
   "drag_blocked",
   "selection_blocked",
   "external_capture_suspected",
+  "automation_detected",
+  "printscreen_key_detected",
 ]);
 
 // Client telemetry (right-click/drag/selection/blur blocked, DevTools

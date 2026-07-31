@@ -13,10 +13,21 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
+// Kept in sync with AUTO_BAN_EVENT_TYPES in app/api/security-events/route.ts
+// (plus honeypot_click and bulk_download_suspected, which ban through their
+// own separate routes rather than that one) — purely for the destructive
+// badge below, so this list drifting out of sync doesn't affect any actual
+// ban decision, just whether this page highlights it correctly.
 const BAN_TRIGGERING_EVENTS = new Set([
   "honeypot_click",
   "devtools_key_blocked",
   "devtools_suspected",
+  "drag_blocked",
+  "selection_blocked",
+  "external_capture_suspected",
+  "automation_detected",
+  "printscreen_key_detected",
+  "bulk_download_suspected",
 ]);
 
 export default async function AdminSecurityPage() {

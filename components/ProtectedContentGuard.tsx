@@ -17,9 +17,14 @@ const SUSTAINED_BLUR_MS = 4000;
 const POST_BLUR_CLICK_WINDOW_MS = 4000;
 
 // Keyboard shortcuts that open browser DevTools — a soft deterrent only.
-// Any of these can still be reached via the browser's own menu, and OS-level
-// screenshot shortcuts (Cmd+Shift+3/4/5, PrintScreen, Win+Shift+S) are never
-// visible to page JS at all, so this doesn't (and can't) block those.
+// Any of these can still be reached via the browser's own menu. Most OS-level
+// screenshot shortcuts (Mac's Cmd+Shift+3/4/5, Windows' Win+Shift+S) are
+// genuinely invisible to page JS — the OS intercepts them before any browser
+// ever sees a keydown. The one exception is the plain Windows PrintScreen
+// key, which does reach the page (as a keyup, not keydown, in Chrome/Edge/
+// Firefox) — see onPrintScreen below. Even there, nothing can preventDefault
+// the actual capture; the most this ever does is find out shortly after it
+// already happened.
 function isDevToolsShortcut(e: KeyboardEvent): boolean {
   const key = e.key.toLowerCase();
   if (key === "f12") return true;
@@ -85,6 +90,15 @@ export default function ProtectedContentGuard({
   }
 
   useEffect(() => {
+    // navigator.webdriver is set to true by every mainstream automation
+    // framework (Puppeteer, Selenium, Playwright) so sites can detect
+    // scraping bots — and, unlike the heuristics below, is not something a
+    // real fan's browser ever sets on its own. Checked once on mount, not on
+    // an interval, since it doesn't change while the page stays open.
+    if (navigator.webdriver) {
+      report("automation_detected");
+    }
+
     // Blurs the content whenever the window loses focus or the tab goes to
     // the background (alt-tab, switching apps/tabs) — this does NOT catch a
     // native OS screenshot (that never blurs or hides the window), only
@@ -155,6 +169,18 @@ export default function ProtectedContentGuard({
       }
     }
 
+    // Windows' PrintScreen key is the one OS-level capture shortcut that
+    // does reach the page — as a keyup (not keydown) in Chrome/Edge/Firefox
+    // — unlike Mac's Cmd+Shift+3/4/5, which the OS intercepts before the
+    // browser ever sees them. There's nothing to preventDefault (the OS has
+    // already copied the screen to the clipboard by the time this fires),
+    // so this is pure after-the-fact reporting, same as the honeypot.
+    function onPrintScreen(e: KeyboardEvent) {
+      if (e.key === "PrintScreen") {
+        report("printscreen_key_detected");
+      }
+    }
+
     // Capture phase, so this still fires even if a child (e.g. the lightbox)
     // calls stopPropagation() on the same click during the bubble phase.
     function onClickAnywhere() {
@@ -169,6 +195,7 @@ export default function ProtectedContentGuard({
     window.addEventListener("focus", onFocus);
     document.addEventListener("visibilitychange", onVisibilityChange);
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("keyup", onPrintScreen);
     document.addEventListener("click", onClickAnywhere, true);
     const interval = setInterval(checkDevTools, 3000);
 
@@ -177,6 +204,7 @@ export default function ProtectedContentGuard({
       window.removeEventListener("focus", onFocus);
       document.removeEventListener("visibilitychange", onVisibilityChange);
       document.removeEventListener("keydown", onKeyDown);
+      document.removeEventListener("keyup", onPrintScreen);
       document.removeEventListener("click", onClickAnywhere, true);
       clearInterval(interval);
     };
