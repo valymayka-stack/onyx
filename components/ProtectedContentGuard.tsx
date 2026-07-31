@@ -228,7 +228,18 @@ export default function ProtectedContentGuard({
         e.preventDefault();
         report("selection_blocked");
       }}
-      style={{ userSelect: "none", position: "relative" }}
+      style={{
+        userSelect: "none",
+        WebkitUserSelect: "none",
+        // iOS Safari's long-press "Save to Photos / Copy" menu is native
+        // WebKit UI that bypasses the contextmenu DOM event entirely — unlike
+        // Android Chrome, which fires contextmenu for long-press the same
+        // way desktop does for right-click, so onContextMenu above already
+        // covers Android. This CSS switch is the only way to turn the iOS
+        // menu off; there's no JS event to preventDefault on.
+        WebkitTouchCallout: "none",
+        position: "relative",
+      }}
     >
       <div
         style={{

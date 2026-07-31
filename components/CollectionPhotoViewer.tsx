@@ -48,6 +48,7 @@ export default function CollectionPhotoViewer({
           alt=""
           className="max-h-[70vh] w-full cursor-zoom-in object-contain"
           draggable={false}
+          style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
           onClick={() => setLightboxOpen(true)}
         />
 
@@ -89,7 +90,13 @@ export default function CollectionPhotoViewer({
               )}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={item.url} alt="" className="size-full object-cover" draggable={false} />
+              <img
+                src={item.url}
+                alt=""
+                className="size-full object-cover"
+                draggable={false}
+                style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
+              />
             </button>
           ))}
         </div>
@@ -115,6 +122,7 @@ export default function CollectionPhotoViewer({
             alt=""
             className="max-h-[92vh] max-w-[95vw] cursor-zoom-out object-contain"
             draggable={false}
+            style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
             onClick={(e) => e.stopPropagation()}
           />
 
