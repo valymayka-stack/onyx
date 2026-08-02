@@ -18,6 +18,11 @@ import { Badge } from "@/components/ui/badge";
 // app/api/content/[itemId]/route.ts rather than that one) — purely for the
 // destructive badge below, so this list drifting out of sync doesn't affect
 // any actual ban decision, just whether this page highlights it correctly.
+// "blur" itself is deliberately NOT in this set even though it can ban — a
+// single blur row never bans on its own, only the 3rd-within-2-minutes does
+// (see countRecentBlurEvents), so flagging every blur row here would be
+// misleading; the ban it eventually causes shows up in ban_history under
+// "excessive_tab_switching" instead.
 const BAN_TRIGGERING_EVENTS = new Set([
   "devtools_key_blocked",
   "devtools_suspected",
@@ -26,6 +31,7 @@ const BAN_TRIGGERING_EVENTS = new Set([
   "external_capture_suspected",
   "automation_detected",
   "printscreen_key_detected",
+  "save_or_print_blocked",
   "bulk_download_suspected",
 ]);
 

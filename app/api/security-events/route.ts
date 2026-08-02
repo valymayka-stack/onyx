@@ -29,9 +29,15 @@ const EVENT_LIMIT_PER_MINUTE = 30;
 //   reach the page (Windows PrintScreen, as a keyup) — Mac's Cmd+Shift+3/4/5
 //   and Windows' Win+Shift+S are intercepted by the OS before any browser
 //   ever sees them, so there's no equivalent event for those.
-// right_click_blocked and save_or_print_blocked stay OUT of this set
-// deliberately — those are things people reach for out of habit far more
-// often than they mean anything by it.
+// - save_or_print_blocked: Ctrl/Cmd+S (save-page-as / download) and
+//   Ctrl/Cmd+P (print-to-PDF, effectively another download path). Originally
+//   left out deliberately (habit, not intent — see git history), but the
+//   product decision changed: these are now treated as clear intent too,
+//   at the cost of occasionally banning someone who hit Ctrl+P/S from pure
+//   muscle memory with no intent to save anything.
+// right_click_blocked stays OUT of this set — it alone still bans nobody,
+// since it's the one signal that fires on completely passive browsing (no
+// modifier key, no follow-through required).
 //
 // bulk_download_suspected is NOT posted through this route — it's detected
 // directly in app/api/content/[itemId]/route.ts (too many distinct items
@@ -46,7 +52,31 @@ const AUTO_BAN_EVENT_TYPES = new Set([
   "external_capture_suspected",
   "automation_detected",
   "printscreen_key_detected",
+  "save_or_print_blocked",
 ]);
+
+// A single blur (tab/window switch) is too common to mean anything on its
+// own — see external_capture_suspected above for the pattern that already
+// catches the "went to set up a recorder" case. But repeated switching away
+// and back, on its own, is also now a ban condition at the product's
+// request: three or more within the window reads as someone shuttling
+// between this tab and another app/device rather than one-off distraction.
+const BLUR_WINDOW_MINUTES = 2;
+const BLUR_BAN_THRESHOLD = 3;
+
+async function countRecentBlurEvents(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<number> {
+  const since = new Date(Date.now() - BLUR_WINDOW_MINUTES * 60_000).toISOString();
+  const { count } = await admin
+    .from("security_events")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .eq("event_type", "blur")
+    .gte("created_at", since);
+  return count ?? 0;
+}
 
 // Client telemetry (right-click/drag/selection/blur blocked, DevTools
 // suspected). The row always carries the server-verified session user, never
@@ -93,12 +123,22 @@ export async function POST(request: NextRequest) {
     metadata: body.metadata ?? null,
   });
 
+  let banReason: string | null = null;
   if (user && AUTO_BAN_EVENT_TYPES.has(body.eventType)) {
+    banReason = body.eventType;
+  } else if (user && body.eventType === "blur") {
+    const recentBlurs = await countRecentBlurEvents(admin, user.id);
+    if (recentBlurs >= BLUR_BAN_THRESHOLD) {
+      banReason = "excessive_tab_switching";
+    }
+  }
+
+  if (user && banReason) {
     await applyBan(admin, {
       userId: user.id,
       ip,
       fingerprint,
-      reason: body.eventType,
+      reason: banReason,
     });
 
     return NextResponse.json(
