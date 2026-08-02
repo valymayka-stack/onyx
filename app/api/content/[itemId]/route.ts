@@ -128,23 +128,30 @@ export async function GET(
   // Bulk-download detection: no screenshot/DevTools signal can see a script
   // harvesting every photo this account has access to, since it never
   // touches a browser tab — this is the one check on the delivery path
-  // itself, independent of anything the client reports.
-  const distinctItemCount = await countDistinctItemsRecent(admin, user.id);
-  if (distinctItemCount >= DISTINCT_ITEM_BAN_THRESHOLD) {
-    await admin.from("security_events").insert({
-      event_type: "bulk_download_suspected",
-      user_id: user.id,
-      ip,
-      user_agent: request.headers.get("user-agent"),
-      metadata: { distinctItemCount },
-    });
-    await applyBan(admin, {
-      userId: user.id,
-      ip,
-      fingerprint: null,
-      reason: "bulk_download_suspected",
-    });
-    return NextResponse.json({ error: "not found" }, { status: 404 });
+  // itself, independent of anything the client reports. Skipped for admins:
+  // applyBan() already no-ops on an admin target, but this check runs before
+  // that and was still rejecting the request with 404 on its own — the
+  // /admin/collections/[id] photo grid legitimately requests every photo in
+  // a collection in one page load, which is exactly this pattern for any
+  // collection at or above DISTINCT_ITEM_BAN_THRESHOLD photos.
+  if (!isAdmin) {
+    const distinctItemCount = await countDistinctItemsRecent(admin, user.id);
+    if (distinctItemCount >= DISTINCT_ITEM_BAN_THRESHOLD) {
+      await admin.from("security_events").insert({
+        event_type: "bulk_download_suspected",
+        user_id: user.id,
+        ip,
+        user_agent: request.headers.get("user-agent"),
+        metadata: { distinctItemCount },
+      });
+      await applyBan(admin, {
+        userId: user.id,
+        ip,
+        fingerprint: null,
+        reason: "bulk_download_suspected",
+      });
+      return NextResponse.json({ error: "not found" }, { status: 404 });
+    }
   }
 
   const { data: fileBlob, error: downloadError } = await admin.storage
