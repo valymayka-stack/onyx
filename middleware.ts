@@ -135,7 +135,15 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // /downloads/ is excluded alongside the static-asset extensions below —
+  // the Android APK living there is a public installer binary with nothing
+  // user-specific in it, so it doesn't need the auth/ban/MFA checks this
+  // middleware runs before anything else. Sending a large file through
+  // those checks anyway (several sequential Supabase calls before a byte of
+  // the response goes out) was actually breaking the download outright —
+  // 503s under Railway, even for an authenticated request — not just adding
+  // needless latency.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|downloads/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
