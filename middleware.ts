@@ -19,9 +19,25 @@ const MFA_PREFIXES = ["/mfa/enroll", "/mfa/verify"];
 // just photograph the screen instead).
 const ANDROID_APP_MARKER = "OnyxAndroidApp";
 const ANDROID_GATE_PATH = "/android-app-required";
+const MOBILE_GATE_PATH = "/mobile-required";
+const GATE_PATHS = [ANDROID_GATE_PATH, MOBILE_GATE_PATH];
 
 function isUngatedAndroidBrowser(userAgent: string): boolean {
   return /Android/i.test(userAgent) && !userAgent.includes(ANDROID_APP_MARKER);
+}
+
+// Leaks disproportionately come from people who can screen-record or
+// screenshot with a keyboard shortcut and no OS-level friction — a desktop
+// browser gives an attacker that for free, on top of drag-and-drop and
+// devtools already being harder to fully block there. Blocking desktop
+// outright forces every fan onto a platform where at least one of the two
+// (Android app, iOS Safari's weaker but still-present JS deterrents) applies.
+// Caveat: iPadOS Safari has reported itself as "Macintosh" in the UA string
+// since iOS 13 (so desktop-tier sites render correctly) — there is no
+// server-side signal that tells a real iPad apart from a real Mac, so a fan
+// using an iPad gets blocked here too. Accepted trade-off for now.
+function isDesktopBrowser(userAgent: string): boolean {
+  return !/Mobi|Android|iPhone|iPad|iPod/i.test(userAgent);
 }
 
 function isPublicPath(path: string) {
@@ -112,15 +128,18 @@ export async function middleware(request: NextRequest) {
   }
 
   // Admins and creators manage their own account/content from whatever
-  // device they have on hand — this gate is aimed at fans viewing delivered
-  // photos, not at the people running the platform.
-  if (
-    path !== ANDROID_GATE_PATH &&
-    !path.startsWith("/admin") &&
-    !path.startsWith("/studio") &&
-    isUngatedAndroidBrowser(request.headers.get("user-agent") ?? "")
-  ) {
+  // device they have on hand — these gates are aimed at fans viewing
+  // delivered photos, not at the people running the platform.
+  const userAgent = request.headers.get("user-agent") ?? "";
+  const isPlatformPath =
+    GATE_PATHS.includes(path) || path.startsWith("/admin") || path.startsWith("/studio");
+
+  if (!isPlatformPath && isUngatedAndroidBrowser(userAgent)) {
     return NextResponse.redirect(new URL(ANDROID_GATE_PATH, request.url));
+  }
+
+  if (!isPlatformPath && isDesktopBrowser(userAgent)) {
+    return NextResponse.redirect(new URL(MOBILE_GATE_PATH, request.url));
   }
 
   if (path.startsWith("/admin") && !(await hasRole(supabase, user.id, "admin"))) {
