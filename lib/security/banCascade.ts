@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { hasRole } from "@/lib/auth/roles";
 
 interface BanInput {
   userId: string;
@@ -14,10 +15,20 @@ interface BanInput {
 // /api/content/[itemId]: bans the account, the IP, and the device
 // fingerprint in one pass, logs all three to ban_history, and kills the
 // session immediately (not on next login).
+//
+// Admins are exempt, checked here rather than at each call site so no
+// future trigger can forget it: an admin previewing a large collection in
+// /admin (which renders photos through the same signed delivery route fans
+// use) legitimately looks exactly like the bulk-download pattern this is
+// meant to catch, and self-locking the one real admin account out mid-review
+// is worse than the auto-ban ever protecting against — a compromised admin
+// account is a manual-ban-button problem, not this heuristic's job.
 export async function applyBan(
   admin: SupabaseClient,
   { userId, ip, fingerprint, reason }: BanInput,
 ): Promise<void> {
+  if (await hasRole(admin, userId, "admin")) return;
+
   await admin
     .from("profiles")
     .update({ banned_at: new Date().toISOString() })
