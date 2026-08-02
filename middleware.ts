@@ -5,6 +5,25 @@ import { hasRole } from "@/lib/auth/roles";
 const PUBLIC_PREFIXES = ["/login", "/api/"];
 const MFA_PREFIXES = ["/mfa/enroll", "/mfa/verify"];
 
+// No web-based signal (see ProtectedContentGuard.tsx) can prevent a
+// screenshot on Android — the OS never lets a browser page see or block the
+// gesture. The Android app (once built) sets FLAG_SECURE on its WebView,
+// which the OS itself enforces at the pixel level, something no web page can
+// ever do. Until then, a plain Android browser gets no content at all rather
+// than content with a weaker guarantee than every other platform gets.
+// ANDROID_APP_MARKER is a string the app's WebView appends to its own user
+// agent (e.g. "... OnyxAndroidApp/1.0") so this check can tell the real app
+// apart from a browser — spoofable by anyone deliberately faking the header,
+// but that's true of every other client-reported signal in this app too, and
+// spoofing it gains an attacker nothing they didn't already have (they could
+// just photograph the screen instead).
+const ANDROID_APP_MARKER = "OnyxAndroidApp";
+const ANDROID_GATE_PATH = "/android-app-required";
+
+function isUngatedAndroidBrowser(userAgent: string): boolean {
+  return /Android/i.test(userAgent) && !userAgent.includes(ANDROID_APP_MARKER);
+}
+
 function isPublicPath(path: string) {
   if (path === "/") return true;
   return PUBLIC_PREFIXES.some((p) => path.startsWith(p));
@@ -90,6 +109,18 @@ export async function middleware(request: NextRequest) {
 
   if (isPublicPath(path) || MFA_PREFIXES.some((p) => path.startsWith(p))) {
     return response;
+  }
+
+  // Admins and creators manage their own account/content from whatever
+  // device they have on hand — this gate is aimed at fans viewing delivered
+  // photos, not at the people running the platform.
+  if (
+    path !== ANDROID_GATE_PATH &&
+    !path.startsWith("/admin") &&
+    !path.startsWith("/studio") &&
+    isUngatedAndroidBrowser(request.headers.get("user-agent") ?? "")
+  ) {
+    return NextResponse.redirect(new URL(ANDROID_GATE_PATH, request.url));
   }
 
   if (path.startsWith("/admin") && !(await hasRole(supabase, user.id, "admin"))) {
