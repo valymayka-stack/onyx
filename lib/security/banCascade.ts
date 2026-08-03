@@ -1,6 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hasRole } from "@/lib/auth/roles";
+import { notifyBotOfBan, telegramIdFromEmail } from "@/lib/security/telegramBridge";
 
 interface BanInput {
   userId: string;
@@ -62,4 +63,11 @@ export async function applyBan(
   await admin.from("ban_history").insert(banHistoryRows);
 
   await admin.auth.admin.signOut(userId, "global");
+
+  // Best-effort, non-blocking (see telegramBridge.ts) — no-ops entirely
+  // until the bot side of this bridge exists. When it does, this is what
+  // pulls a banned fan's Telegram channel access, Grupo included.
+  const { data: userData } = await admin.auth.admin.getUserById(userId);
+  const telegramId = telegramIdFromEmail(userData?.user?.email);
+  if (telegramId) notifyBotOfBan(telegramId, reason);
 }

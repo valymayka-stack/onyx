@@ -21,8 +21,9 @@ export class ProvisionFanError extends Error {
 }
 
 // Telegram user ids are always numeric — this also keeps the synthetic
-// `<id>@onyx.com` address well-formed.
-const TELEGRAM_ID_PATTERN = /^\d{4,15}$/;
+// `<id>@onyx.com` address well-formed. Exported so provisionOrGrantFan.ts
+// can validate before it even checks whether the account already exists.
+export const TELEGRAM_ID_PATTERN = /^\d{4,15}$/;
 
 // The only way a fan account gets created now that self-serve signup is
 // gone — either the bot route (app/api/bot/provision-fan) right after a

@@ -3,7 +3,8 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { countRecentAttempts, logAttempt } from "@/lib/security/rateLimiter";
 import { getRequestIp } from "@/lib/security/requestIp";
-import { provisionFanAccount, ProvisionFanError } from "@/lib/admin/provisionFan";
+import { ProvisionFanError } from "@/lib/admin/provisionFan";
+import { provisionOrGrantFan } from "@/lib/admin/provisionOrGrantFan";
 
 const BOT_REQUEST_LIMIT_PER_MINUTE = 20;
 
@@ -17,10 +18,17 @@ function secretsMatch(a: string, b: string): boolean {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
-// Called by the Telegram bot (Taurina) right after a purchase is approved.
-// Self-serve signup is gone — this is now the only way a fan account gets
-// created automatically. Auth is a shared secret header (BOT_PROVISION_SECRET),
-// not a user session, since the bot has no Onyx session of its own.
+// Called by the Telegram bot right after a purchase is approved for any
+// collection except Grupo (which stays entirely on the Telegram side, no
+// Onyx account involved). Self-serve signup is gone — this is now the only
+// way a fan account gets created automatically. Auth is a shared secret
+// header (BOT_PROVISION_SECRET), not a user session, since the bot has no
+// Onyx session of its own.
+//
+// Idempotent by design: the bot calls this on every approval, whether the
+// fan already has an Onyx account or not (see provisionOrGrantFan.ts) — the
+// bot never has to track "does this telegramId already have Onyx creds"
+// itself, and a repeat buyer keeps their existing password.
 export async function POST(request: NextRequest) {
   const secret = process.env.BOT_PROVISION_SECRET;
   const provided = request.headers.get("x-bot-secret");
@@ -34,6 +42,10 @@ export async function POST(request: NextRequest) {
   const password = typeof body?.password === "string" ? body.password : "";
   const displayName =
     typeof body?.displayName === "string" ? body.displayName : undefined;
+  const channelCode =
+    typeof body?.channelCode === "string" && body.channelCode.trim()
+      ? body.channelCode.trim()
+      : undefined;
 
   if (!telegramId || !password) {
     return NextResponse.json(
@@ -56,7 +68,7 @@ export async function POST(request: NextRequest) {
   await logAttempt(admin, { ip, actionType: "bot_provision_fan" });
 
   try {
-    const result = await provisionFanAccount({ telegramId, password, displayName });
+    const result = await provisionOrGrantFan({ telegramId, password, displayName, channelCode });
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     if (err instanceof ProvisionFanError) {

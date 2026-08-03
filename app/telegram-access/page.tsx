@@ -6,6 +6,11 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import LogoutButton from "@/components/LogoutButton";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { requestTelegramInvites, telegramIdFromEmail } from "@/lib/security/telegramBridge";
+
+export const dynamic = "force-dynamic";
 
 // Reached only via the iPhone gate in middleware.ts — a logged-in fan on an
 // iPhone browser lands here instead of the feed. Admins and creators
@@ -14,12 +19,50 @@ import LogoutButton from "@/components/LogoutButton";
 // iOS has no capture-prevention API for any web context, so unlike Android
 // there's no app that would make this safer than plain Safari already is —
 // the 2026-08 call was to route iPhone fans to Telegram instead, where
-// delivery already exists independently of this codebase. The automated
-// hand-off from here into a specific Telegram invite isn't wired up yet
-// (depends on collection <-> bot channel mapping, not built as of this
-// page's creation) — for now this is a holding message, not a promise of an
-// instant automated delivery.
-export default function TelegramAccessPage() {
+// delivery already exists independently of this codebase.
+//
+// requestTelegramInvites silently returns false until the bot side of this
+// bridge exists (TELEGRAM_BOT_BRIDGE_URL/_SECRET unset) — in that case this
+// renders the same generic holding message it always has. Once the bot side
+// exists, fans with a mapped collection start seeing the confirmed version
+// with no further change needed here.
+export default async function TelegramAccessPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const telegramId = telegramIdFromEmail(user?.email);
+
+  // Same reasoning as /feed: collection_access_grants has no fan-select RLS
+  // policy, so this goes through the service-role client.
+  const admin = createAdminClient();
+  let invitesRequested = false;
+
+  if (telegramId) {
+    const { data: myGrants } = await admin
+      .from("collection_access_grants")
+      .select("collection_id")
+      .eq("fan_id", user!.id);
+    const collectionIds = (myGrants ?? []).map((g) => g.collection_id);
+
+    if (collectionIds.length > 0) {
+      const { data: collections } = await admin
+        .from("content_collections")
+        .select("telegram_channel_code")
+        .in("id", collectionIds)
+        .not("telegram_channel_code", "is", null);
+
+      const channelCodes = (collections ?? [])
+        .map((c) => c.telegram_channel_code)
+        .filter((code): code is string => Boolean(code));
+
+      if (channelCodes.length > 0) {
+        invitesRequested = await requestTelegramInvites(telegramId, channelCodes);
+      }
+    }
+  }
+
   return (
     <main className="flex flex-1 items-center justify-center p-8">
       <Card className="w-full max-w-sm">
@@ -31,13 +74,19 @@ export default function TelegramAccessPage() {
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4 text-sm text-muted-foreground">
-          <p>
-            Si ya compraste una colección, revisa tu chat de Telegram — ahí
-            está o llegará tu acceso.
-          </p>
-          <p>
-            Si tienes dudas, contacta al mismo lugar donde hiciste tu compra.
-          </p>
+          {invitesRequested ? (
+            <p>Ya te mandamos la invitación de tus colecciones por Telegram — revisa tu chat.</p>
+          ) : (
+            <>
+              <p>
+                Si ya compraste una colección, revisa tu chat de Telegram — ahí
+                está o llegará tu acceso.
+              </p>
+              <p>
+                Si tienes dudas, contacta al mismo lugar donde hiciste tu compra.
+              </p>
+            </>
+          )}
           <LogoutButton />
         </CardContent>
       </Card>
