@@ -20,10 +20,24 @@ const MFA_PREFIXES = ["/mfa/enroll", "/mfa/verify"];
 const ANDROID_APP_MARKER = "OnyxAndroidApp";
 const ANDROID_GATE_PATH = "/android-app-required";
 const MOBILE_GATE_PATH = "/mobile-required";
-const GATE_PATHS = [ANDROID_GATE_PATH, MOBILE_GATE_PATH];
+const IPHONE_GATE_PATH = "/telegram-access";
+const GATE_PATHS = [ANDROID_GATE_PATH, MOBILE_GATE_PATH, IPHONE_GATE_PATH];
 
 function isUngatedAndroidBrowser(userAgent: string): boolean {
   return /Android/i.test(userAgent) && !userAgent.includes(ANDROID_APP_MARKER);
+}
+
+// iOS has no capture-prevention API for any web context (no FLAG_SECURE
+// equivalent, not even for a native app) — so unlike Android, there's no app
+// to build that would make Safari access safer than it already is. The
+// business call (2026-08) is to route iPhone fans to Telegram instead
+// (delivery already exists there, unrelated to this codebase) rather than
+// serve them a weaker-guarantee version of the same content. iPad is not
+// matched here — see isDesktopBrowser below for why it can't be told apart
+// from a Mac, and why that's an accepted gap rather than something this
+// check should try to paper over.
+function isIphoneBrowser(userAgent: string): boolean {
+  return /iPhone/i.test(userAgent);
 }
 
 // Leaks disproportionately come from people who can screen-record or
@@ -136,6 +150,10 @@ export async function middleware(request: NextRequest) {
 
   if (!isPlatformPath && isUngatedAndroidBrowser(userAgent)) {
     return NextResponse.redirect(new URL(ANDROID_GATE_PATH, request.url));
+  }
+
+  if (!isPlatformPath && isIphoneBrowser(userAgent)) {
+    return NextResponse.redirect(new URL(IPHONE_GATE_PATH, request.url));
   }
 
   if (!isPlatformPath && isDesktopBrowser(userAgent)) {
