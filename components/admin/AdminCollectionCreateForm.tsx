@@ -31,6 +31,7 @@ export default function AdminCollectionCreateForm({
   const [creatorId, setCreatorId] = useState(creators[0]?.id ?? "");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [telegramChannelCode, setTelegramChannelCode] = useState("");
   const [cover, setCover] = useState<File | null>(null);
   const [photos, setPhotos] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -57,7 +58,12 @@ export default function AdminCollectionCreateForm({
 
     const { data: newCollection, error: collectionError } = await supabase
       .from("content_collections")
-      .insert({ creator_id: creatorId, title, description })
+      .insert({
+        creator_id: creatorId,
+        title,
+        description,
+        telegram_channel_code: telegramChannelCode.trim() || null,
+      })
       .select("id")
       .single();
 
@@ -158,6 +164,20 @@ export default function AdminCollectionCreateForm({
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="col-desc">Descripción</Label>
             <Textarea id="col-desc" value={description} onChange={(e) => setDescription(e.target.value)} />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="col-telegram-code">Código de canal de Telegram (opcional)</Label>
+            <Input
+              id="col-telegram-code"
+              placeholder="ej. lady_in_red"
+              value={telegramChannelCode}
+              onChange={(e) => setTelegramChannelCode(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Debe coincidir exactamente con el channel_key del bot. Déjalo vacío si esta
+              colección no tiene canal de Telegram equivalente.
+            </p>
           </div>
 
           <div className="flex flex-col gap-1.5">

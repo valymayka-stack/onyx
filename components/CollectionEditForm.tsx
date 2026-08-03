@@ -15,14 +15,19 @@ export default function CollectionEditForm({
   collectionId,
   initialTitle,
   initialDescription,
+  isAdmin = false,
+  initialTelegramChannelCode = "",
 }: {
   collectionId: string;
   initialTitle: string;
   initialDescription: string | null;
+  isAdmin?: boolean;
+  initialTelegramChannelCode?: string;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState(initialDescription ?? "");
+  const [telegramChannelCode, setTelegramChannelCode] = useState(initialTelegramChannelCode);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -37,7 +42,11 @@ export default function CollectionEditForm({
     const supabase = createClient();
     const { error: updateError } = await supabase
       .from("content_collections")
-      .update({ title, description })
+      .update(
+        isAdmin
+          ? { title, description, telegram_channel_code: telegramChannelCode.trim() || null }
+          : { title, description },
+      )
       .eq("id", collectionId);
 
     setLoading(false);
@@ -71,6 +80,22 @@ export default function CollectionEditForm({
               onChange={(e) => setDescription(e.target.value)}
             />
           </div>
+
+          {isAdmin && (
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="edit-telegram-code">Código de canal de Telegram (opcional)</Label>
+              <Input
+                id="edit-telegram-code"
+                placeholder="ej. lady_in_red"
+                value={telegramChannelCode}
+                onChange={(e) => setTelegramChannelCode(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Debe coincidir exactamente con el channel_key del bot. Déjalo vacío si esta
+                colección no tiene canal de Telegram equivalente.
+              </p>
+            </div>
+          )}
 
           {error && (
             <Alert variant="destructive">

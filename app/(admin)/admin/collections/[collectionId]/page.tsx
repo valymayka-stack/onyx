@@ -31,7 +31,9 @@ export default async function AdminManageCollectionPage({
 
   const { data: collection } = await supabase
     .from("content_collections")
-    .select("id, title, description, cover_item_id, creator_id, creators(handle)")
+    .select(
+      "id, title, description, cover_item_id, creator_id, telegram_channel_code, creators(handle)",
+    )
     .eq("id", collectionId)
     .maybeSingle();
 
@@ -128,6 +130,8 @@ export default async function AdminManageCollectionPage({
         collectionId={collectionId}
         initialTitle={collection.title}
         initialDescription={collection.description}
+        isAdmin
+        initialTelegramChannelCode={collection.telegram_channel_code ?? ""}
       />
     </main>
   );

@@ -54,6 +54,20 @@ function isDesktopBrowser(userAgent: string): boolean {
   return !/Mobi|Android|iPhone|iPad|iPod/i.test(userAgent);
 }
 
+// Purely informational (see 0011_telegram_bridge_prep.sql) — reuses the same
+// signals as the gate checks above rather than re-deriving them, so this
+// can't silently drift from what actually gates a request.
+type DeviceType = "android_app" | "android_browser" | "iphone" | "desktop" | "other_mobile";
+
+function detectDeviceType(userAgent: string): DeviceType {
+  if (/Android/i.test(userAgent)) {
+    return userAgent.includes(ANDROID_APP_MARKER) ? "android_app" : "android_browser";
+  }
+  if (isIphoneBrowser(userAgent)) return "iphone";
+  if (isDesktopBrowser(userAgent)) return "desktop";
+  return "other_mobile";
+}
+
 function isPublicPath(path: string) {
   if (path === "/") return true;
   return PUBLIC_PREFIXES.some((p) => path.startsWith(p));
@@ -84,13 +98,31 @@ export async function middleware(request: NextRequest) {
   // cookie survives.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("banned_at")
+    .select("banned_at, device_type")
     .eq("id", user.id)
     .maybeSingle();
 
   if (profile?.banned_at) {
     await supabase.auth.signOut();
     return NextResponse.redirect(new URL("/login?banned=1", request.url));
+  }
+
+  const userAgent = request.headers.get("user-agent") ?? "";
+
+  // Fire-and-forget: informational only (see 0011_telegram_bridge_prep.sql),
+  // so nothing downstream should wait on it. Skipped for /admin and /studio
+  // since this is about tracking fan platforms, not staff devices.
+  if (!path.startsWith("/admin") && !path.startsWith("/studio")) {
+    const detectedDevice = detectDeviceType(userAgent);
+    if (profile && profile.device_type !== detectedDevice) {
+      supabase
+        .from("profiles")
+        .update({ device_type: detectedDevice })
+        .eq("id", user.id)
+        .then(({ error }) => {
+          if (error) console.error("Failed to record device_type", error);
+        });
+    }
   }
 
   // Every authenticated page response is marked non-cacheable so the
@@ -144,7 +176,6 @@ export async function middleware(request: NextRequest) {
   // Admins and creators manage their own account/content from whatever
   // device they have on hand — these gates are aimed at fans viewing
   // delivered photos, not at the people running the platform.
-  const userAgent = request.headers.get("user-agent") ?? "";
   const isPlatformPath =
     GATE_PATHS.includes(path) || path.startsWith("/admin") || path.startsWith("/studio");
 
