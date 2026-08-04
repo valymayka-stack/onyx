@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
 import { hasRole, getUserRoles } from "@/lib/auth/roles";
+import { getRequestIp } from "@/lib/security/requestIp";
 
 const PUBLIC_PREFIXES = ["/login", "/api/"];
 const MFA_PREFIXES = ["/mfa/enroll", "/mfa/verify"];
@@ -98,7 +99,7 @@ export async function middleware(request: NextRequest) {
   // cookie survives.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("banned_at, device_type")
+    .select("banned_at, device_type, last_login_at")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -108,6 +109,11 @@ export async function middleware(request: NextRequest) {
   }
 
   const userAgent = request.headers.get("user-agent") ?? "";
+
+  // Roles are needed below (login-history gating) before they're needed
+  // again further down for the MFA check — computed once, reused for both.
+  const roles = await getUserRoles(supabase, user.id);
+  const isFan = roles.includes("fan");
 
   // Fire-and-forget: informational only (see 0011_telegram_bridge_prep.sql),
   // so nothing downstream should wait on it. Skipped for /admin and /studio
@@ -121,6 +127,33 @@ export async function middleware(request: NextRequest) {
         .eq("id", user.id)
         .then(({ error }) => {
           if (error) console.error("Failed to record device_type", error);
+        });
+    }
+
+    // Login history is fan-only (2026-08) — admin/creator IPs aren't
+    // retained. Compared as Date values, not raw strings: Postgres may
+    // reformat the timestamptz on round-trip, and a strict string compare
+    // would then record a "new login" on every single request.
+    const lastSignInAt = user.last_sign_in_at;
+    const alreadyRecorded =
+      !!lastSignInAt &&
+      !!profile?.last_login_at &&
+      new Date(profile.last_login_at).getTime() === new Date(lastSignInAt).getTime();
+
+    if (isFan && lastSignInAt && !alreadyRecorded) {
+      const ip = getRequestIp(request);
+      supabase
+        .from("login_history")
+        .insert({ user_id: user.id, ip, user_agent: userAgent, device_type: detectedDevice })
+        .then(({ error }) => {
+          if (error) console.error("Failed to record login_history", error);
+        });
+      supabase
+        .from("profiles")
+        .update({ last_login_at: lastSignInAt })
+        .eq("id", user.id)
+        .then(({ error }) => {
+          if (error) console.error("Failed to update last_login_at", error);
         });
     }
   }
@@ -141,7 +174,6 @@ export async function middleware(request: NextRequest) {
   // successful challenge), so scoping MFA to admin-only scopes single-
   // session enforcement to admin-only too, as a direct consequence — no
   // separate mechanism needed for that.
-  const roles = await getUserRoles(supabase, user.id);
   const requiresMfa = roles.includes("admin");
 
   if (requiresMfa) {

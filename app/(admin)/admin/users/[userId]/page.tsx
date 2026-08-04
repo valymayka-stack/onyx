@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasRole } from "@/lib/auth/roles";
-import { formatDate } from "@/lib/formatDate";
+import { formatDate, formatDateTime } from "@/lib/formatDate";
 import AppHeader from "@/components/AppHeader";
 import AdminNav from "@/components/AdminNav";
 import BanToggleButton from "@/components/admin/BanToggleButton";
@@ -36,7 +36,7 @@ export default async function AdminUserDetailPage({
   const [{ data: userData }, { data: profile }, { data: roleRows }, { data: grantRows }] =
     await Promise.all([
       admin.auth.admin.getUserById(userId),
-      admin.from("profiles").select("display_name, banned_at, device_type").eq("id", userId).maybeSingle(),
+      admin.from("profiles").select("display_name, banned_at, device_type, last_login_at").eq("id", userId).maybeSingle(),
       admin.from("user_roles").select("role").eq("user_id", userId),
       admin
         .from("collection_access_grants")
@@ -48,6 +48,23 @@ export default async function AdminUserDetailPage({
   if (!userData?.user) notFound();
 
   const roles = (roleRows ?? []).map((r) => r.role);
+  const isFan = roles.includes("fan");
+
+  // login_history is only ever written for fans (see middleware.ts) — no
+  // point querying it for admin/creator accounts.
+  const { data: loginRows } = isFan
+    ? await admin
+        .from("login_history")
+        .select("ip, user_agent, device_type, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(20)
+    : { data: null };
+
+  // Fan accounts are provisioned as "{telegramId}@onyx.com" (see
+  // provisionFan.ts) — the Telegram ID is just the email's local part.
+  const telegramId =
+    isFan && userData.user.email ? userData.user.email.split("@")[0] : null;
 
   const grants = (grantRows ?? []).map((g) => {
     const collection = (
@@ -110,6 +127,16 @@ export default async function AdminUserDetailPage({
           <p className="text-muted-foreground">
             Creada el {formatDate(userData.user.created_at)}
           </p>
+          {telegramId && (
+            <p className="text-muted-foreground">
+              Telegram ID: <span className="font-mono text-foreground">{telegramId}</span>
+            </p>
+          )}
+          {profile?.last_login_at && (
+            <p className="text-muted-foreground">
+              Último inicio de sesión: {formatDateTime(profile.last_login_at)}
+            </p>
+          )}
           <div className="flex gap-2">
             <BanToggleButton userId={userId} banned={!!profile?.banned_at} />
             {!roles.includes("admin") && (
@@ -157,6 +184,31 @@ export default async function AdminUserDetailPage({
           ))}
         </CardContent>
       </Card>
+
+      {isFan && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Historial de inicios de sesión</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {(!loginRows || loginRows.length === 0) && (
+              <p className="text-sm text-muted-foreground">
+                Todavía no hay ningún inicio de sesión registrado.
+              </p>
+            )}
+            {loginRows?.map((row, i) => (
+              <div
+                key={i}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm"
+              >
+                <span>{formatDateTime(row.created_at)}</span>
+                <span className="font-mono text-xs text-muted-foreground">{row.ip ?? "—"}</span>
+                {row.device_type && <Badge variant="outline">{row.device_type}</Badge>}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
     </main>
   );
 }
