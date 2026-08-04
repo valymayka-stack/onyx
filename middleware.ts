@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
-import { hasRole } from "@/lib/auth/roles";
+import { hasRole, getUserRoles } from "@/lib/auth/roles";
 
 const PUBLIC_PREFIXES = ["/login", "/api/"];
 const MFA_PREFIXES = ["/mfa/enroll", "/mfa/verify"];
@@ -134,39 +134,57 @@ export async function middleware(request: NextRequest) {
   // matters most for a fan on their phone hitting back right after a ban.
   response.headers.set("Cache-Control", "no-store, must-revalidate");
 
-  // Mandatory MFA: figure out whether this session still needs to enroll a
-  // factor (never enrolled) or step up an existing factor (aal1 -> aal2).
-  const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+  // Mandatory MFA is admin-only (2026-08) — fans and creators found
+  // enrollment too much friction. Single-session enforcement lives inside
+  // the MFA step-up itself (see MfaVerifyForm.tsx / MfaEnrollForm.tsx —
+  // both call supabase.auth.signOut({scope:"others"}) right after a
+  // successful challenge), so scoping MFA to admin-only scopes single-
+  // session enforcement to admin-only too, as a direct consequence — no
+  // separate mechanism needed for that.
+  const roles = await getUserRoles(supabase, user.id);
+  const requiresMfa = roles.includes("admin");
 
-  if (aal && aal.currentLevel !== aal.nextLevel) {
-    // A verified factor exists but this session hasn't completed the
-    // challenge yet. Previously this whole check was skipped for /api/
-    // paths — meaning a stolen password alone (aal1, no TOTP step-up) could
-    // call any mutating API route directly. Now API paths get a 403
-    // instead of being waved through.
-    if (path.startsWith("/mfa/verify")) {
-      return response;
-    }
-    if (path.startsWith("/api/")) {
-      return mfaRequiredJson(response);
-    }
-    return NextResponse.redirect(new URL("/mfa/verify", request.url));
-  }
+  if (requiresMfa) {
+    // Figure out whether this session still needs to enroll a factor
+    // (never enrolled) or step up an existing factor (aal1 -> aal2).
+    const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
 
-  if (aal && aal.currentLevel === "aal1" && aal.nextLevel === "aal1") {
-    const { data: factors } = await supabase.auth.mfa.listFactors();
-    const hasVerifiedTotp = (factors?.totp ?? []).some(
-      (f) => f.status === "verified",
-    );
-    if (!hasVerifiedTotp) {
-      if (path.startsWith("/mfa/enroll")) {
+    if (aal && aal.currentLevel !== aal.nextLevel) {
+      // A verified factor exists but this session hasn't completed the
+      // challenge yet. Previously this whole check was skipped for /api/
+      // paths — meaning a stolen password alone (aal1, no TOTP step-up)
+      // could call any mutating API route directly. Now API paths get a
+      // 403 instead of being waved through.
+      if (path.startsWith("/mfa/verify")) {
         return response;
       }
       if (path.startsWith("/api/")) {
         return mfaRequiredJson(response);
       }
-      return NextResponse.redirect(new URL("/mfa/enroll", request.url));
+      return NextResponse.redirect(new URL("/mfa/verify", request.url));
     }
+
+    if (aal && aal.currentLevel === "aal1" && aal.nextLevel === "aal1") {
+      const { data: factors } = await supabase.auth.mfa.listFactors();
+      const hasVerifiedTotp = (factors?.totp ?? []).some(
+        (f) => f.status === "verified",
+      );
+      if (!hasVerifiedTotp) {
+        if (path.startsWith("/mfa/enroll")) {
+          return response;
+        }
+        if (path.startsWith("/api/")) {
+          return mfaRequiredJson(response);
+        }
+        return NextResponse.redirect(new URL("/mfa/enroll", request.url));
+      }
+    }
+  } else if (MFA_PREFIXES.some((p) => path.startsWith(p))) {
+    // A non-admin has nothing to do here (stale bookmark, or an account
+    // that enrolled back when MFA was mandatory for everyone) — send them
+    // where they'd normally land instead of showing an enroll/verify page
+    // that no longer applies to them.
+    return NextResponse.redirect(new URL("/feed", request.url));
   }
 
   if (isPublicPath(path) || MFA_PREFIXES.some((p) => path.startsWith(p))) {

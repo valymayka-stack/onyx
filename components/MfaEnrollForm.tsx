@@ -51,8 +51,8 @@ export default function MfaEnrollForm() {
         stale.map((f) => supabase.auth.mfa.unenroll({ factorId: f.id })),
       );
 
-      // Mandatory 2FA is enforced uniformly for every account type — this
-      // page only renders when middleware has confirmed the session has no
+      // Mandatory 2FA is admin-only (2026-08) — this page only renders when
+      // middleware has confirmed the session belongs to an admin with no
       // verified TOTP factor yet.
       const { data, error } = await supabase.auth.mfa.enroll({
         factorType: "totp",
