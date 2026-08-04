@@ -1,0 +1,151 @@
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { ArrowLeft } from "lucide-react";
+import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
+import { hasRole } from "@/lib/auth/roles";
+import { formatDate } from "@/lib/formatDate";
+import AppHeader from "@/components/AppHeader";
+import AdminNav from "@/components/AdminNav";
+import BanToggleButton from "@/components/admin/BanToggleButton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+
+export const dynamic = "force-dynamic";
+
+// Drill-down counterpart to /admin/users — that page can only show every
+// account at once; this answers "what does *this* fan actually have
+// access to" without clicking into every collection one at a time.
+export default async function AdminUserDetailPage({
+  params,
+}: {
+  params: Promise<{ userId: string }>;
+}) {
+  const { userId } = await params;
+  const sessionClient = await createClient();
+  const {
+    data: { user: sessionUser },
+  } = await sessionClient.auth.getUser();
+  if (!sessionUser || !(await hasRole(sessionClient, sessionUser.id, "admin"))) {
+    redirect("/feed");
+  }
+
+  const admin = createAdminClient();
+
+  const [{ data: userData }, { data: profile }, { data: roleRows }, { data: grantRows }] =
+    await Promise.all([
+      admin.auth.admin.getUserById(userId),
+      admin.from("profiles").select("display_name, banned_at, device_type").eq("id", userId).maybeSingle(),
+      admin.from("user_roles").select("role").eq("user_id", userId),
+      admin
+        .from("collection_access_grants")
+        .select("collection_id, created_at, content_collections(id, title, telegram_channel_code, creators(handle))")
+        .eq("fan_id", userId)
+        .order("created_at", { ascending: false }),
+    ]);
+
+  if (!userData?.user) notFound();
+
+  const roles = (roleRows ?? []).map((r) => r.role);
+
+  const grants = (grantRows ?? []).map((g) => {
+    const collection = (
+      g.content_collections as unknown as
+        | { id: string; title: string; telegram_channel_code: string | null; creators: { handle: string }[] | { handle: string } | null }[]
+        | { id: string; title: string; telegram_channel_code: string | null; creators: { handle: string }[] | { handle: string } | null }
+        | null
+    ) instanceof Array
+      ? (g.content_collections as unknown as { id: string; title: string; telegram_channel_code: string | null; creators: { handle: string }[] | { handle: string } | null }[])[0]
+      : (g.content_collections as unknown as { id: string; title: string; telegram_channel_code: string | null; creators: { handle: string }[] | { handle: string } | null } | null);
+
+    const creator = (collection?.creators as unknown as { handle: string }[] | { handle: string } | null)
+      instanceof Array
+      ? (collection?.creators as unknown as { handle: string }[])[0]
+      : (collection?.creators as unknown as { handle: string } | null);
+
+    return {
+      grantedAt: g.created_at,
+      collectionId: collection?.id ?? g.collection_id,
+      title: collection?.title ?? "(colección eliminada)",
+      telegramChannelCode: collection?.telegram_channel_code ?? null,
+      creatorHandle: creator?.handle ?? "—",
+    };
+  });
+
+  return (
+    <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-8">
+      <AppHeader
+        title={profile?.display_name || userData.user.email || "Usuario"}
+        subtitle={userData.user.email ?? undefined}
+      />
+      <AdminNav />
+
+      <Link
+        href="/admin/users"
+        className="flex w-fit items-center gap-1 text-sm text-muted-foreground hover:underline"
+      >
+        <ArrowLeft className="size-4" />
+        Volver a usuarios
+      </Link>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Cuenta</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3 text-sm">
+          <div className="flex flex-wrap items-center gap-2">
+            {roles.map((role) => (
+              <Badge key={role} variant="outline">
+                {role}
+              </Badge>
+            ))}
+            {profile?.banned_at ? (
+              <Badge variant="destructive">suspendida</Badge>
+            ) : (
+              <Badge variant="secondary">activa</Badge>
+            )}
+            {profile?.device_type && <Badge variant="outline">{profile.device_type}</Badge>}
+          </div>
+          <p className="text-muted-foreground">
+            Creada el {formatDate(userData.user.created_at)}
+          </p>
+          <div>
+            <BanToggleButton userId={userId} banned={!!profile?.banned_at} />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Colecciones asignadas ({grants.length})</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-2">
+          {grants.length === 0 && (
+            <p className="text-sm text-muted-foreground">
+              Este usuario no tiene ninguna colección asignada.
+            </p>
+          )}
+          {grants.map((g) => (
+            <Link
+              key={g.collectionId}
+              href={`/admin/collections/${g.collectionId}`}
+              className="flex items-center justify-between gap-3 rounded-lg border border-border/60 px-3 py-2 text-sm hover:bg-accent/50"
+            >
+              <div className="flex flex-col">
+                <span className="font-medium">{g.title}</span>
+                <span className="text-xs text-muted-foreground">
+                  @{g.creatorHandle} · otorgada el {formatDate(g.grantedAt)}
+                </span>
+              </div>
+              {g.telegramChannelCode ? (
+                <Badge variant="outline">{g.telegramChannelCode}</Badge>
+              ) : (
+                <Badge variant="outline">sin canal Telegram</Badge>
+              )}
+            </Link>
+          ))}
+        </CardContent>
+      </Card>
+    </main>
+  );
+}

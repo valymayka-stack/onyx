@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasRole } from "@/lib/auth/roles";
-import { formatDate } from "@/lib/formatDate";
 
 // This page's data comes entirely from the service-role client (no
 // cookies()/headers() call), so Next.js would otherwise treat it as
@@ -13,17 +12,8 @@ export const dynamic = "force-dynamic";
 
 import AppHeader from "@/components/AppHeader";
 import AdminNav from "@/components/AdminNav";
-import BanToggleButton from "@/components/admin/BanToggleButton";
+import UsersTable from "@/components/admin/UsersTable";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableHead,
-  TableRow,
-  TableCell,
-} from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 
 export default async function AdminUsersPage() {
   // This page's data comes from the service-role client, which bypasses RLS
@@ -81,58 +71,7 @@ export default async function AdminUsersPage() {
 
       <Card>
         <CardContent className="px-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Email</TableHead>
-                <TableHead>Nombre</TableHead>
-                <TableHead>Rol</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Suscripción</TableHead>
-                <TableHead>Creado</TableHead>
-                <TableHead>Acción</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rows.map((row) => (
-                <TableRow key={row.id}>
-                  <TableCell className="max-w-48 truncate">{row.email}</TableCell>
-                  <TableCell>{row.displayName}</TableCell>
-                  <TableCell>
-                    {row.roles.map((role) => (
-                      <Badge key={role} variant="outline" className="mr-1">
-                        {role}
-                      </Badge>
-                    ))}
-                  </TableCell>
-                  <TableCell>
-                    {row.bannedAt ? (
-                      <Badge variant="destructive">suspendida</Badge>
-                    ) : (
-                      <Badge variant="secondary">activa</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {row.roles.includes("fan") ? (
-                      row.hasActiveSub ? (
-                        <Badge variant="default">suscrito</Badge>
-                      ) : (
-                        <Badge variant="outline">sin suscripción</Badge>
-                      )
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {formatDate(row.createdAt)}
-                  </TableCell>
-                  <TableCell>
-                    <BanToggleButton userId={row.id} banned={!!row.bannedAt} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+          <UsersTable rows={rows} />
         </CardContent>
       </Card>
     </main>

@@ -19,7 +19,7 @@ export default async function AdminCollectionsPage() {
   // collection across every creator, not just ones this session owns.
   const { data: collections } = await supabase
     .from("content_collections")
-    .select("id, title, is_hidden, creators(handle)")
+    .select("id, title, is_hidden, telegram_channel_code, creators(handle)")
     .order("created_at", { ascending: false });
 
   return (
@@ -63,6 +63,11 @@ export default async function AdminCollectionsPage() {
                     @{creator?.handle ?? "—"}
                   </span>
                   {c.is_hidden && <Badge variant="destructive">oculta</Badge>}
+                  {!c.telegram_channel_code && (
+                    <Badge variant="outline" title="Falta el código de canal de Telegram">
+                      sin canal Telegram
+                    </Badge>
+                  )}
                 </CardContent>
               </Card>
             );
