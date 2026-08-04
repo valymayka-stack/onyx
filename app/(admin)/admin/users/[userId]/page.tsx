@@ -8,6 +8,7 @@ import { formatDate } from "@/lib/formatDate";
 import AppHeader from "@/components/AppHeader";
 import AdminNav from "@/components/AdminNav";
 import BanToggleButton from "@/components/admin/BanToggleButton";
+import DeleteAccountButton from "@/components/admin/DeleteAccountButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -109,8 +110,18 @@ export default async function AdminUserDetailPage({
           <p className="text-muted-foreground">
             Creada el {formatDate(userData.user.created_at)}
           </p>
-          <div>
+          <div className="flex gap-2">
             <BanToggleButton userId={userId} banned={!!profile?.banned_at} />
+            {!roles.includes("admin") && (
+              <DeleteAccountButton
+                endpoint="/api/admin/delete-fan"
+                bodyKey="fanId"
+                id={userId}
+                confirmText={userData.user.email ?? userId}
+                redirectTo="/admin/users"
+                warningDetail="Esto elimina la cuenta y su acceso a todas las colecciones. El historial de seguridad se conserva de forma anónima."
+              />
+            )}
           </div>
         </CardContent>
       </Card>

@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/admin/security", label: "Seguridad" },
   { href: "/admin/users", label: "Usuarios" },
   { href: "/admin/users/new", label: "Crear fan" },
+  { href: "/admin/creators", label: "Creadoras" },
   { href: "/admin/creators/new", label: "Crear creadora" },
   { href: "/admin/collections", label: "Colecciones" },
   { href: "/admin/content", label: "Contenido" },
