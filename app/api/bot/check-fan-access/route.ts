@@ -65,19 +65,33 @@ export async function POST(request: NextRequest) {
   const unknownCodes = channelCodes.filter((c: string) => !knownCodes.has(c));
 
   let granted: string[] = [];
+  let loggedIn = false;
   const email = `${telegramId}@onyx.com`;
   const fanId = await findFanIdByEmail(admin, email);
-  if (fanId && known.length > 0) {
-    const { data: grants } = await admin
-      .from("collection_access_grants")
-      .select("collection_id")
-      .eq("fan_id", fanId)
-      .in("collection_id", known.map((c) => c.id));
-    const grantedIds = new Set((grants ?? []).map((g) => g.collection_id));
-    granted = known
-      .filter((c) => grantedIds.has(c.id))
-      .map((c) => c.telegram_channel_code as string);
+  if (fanId) {
+    if (known.length > 0) {
+      const { data: grants } = await admin
+        .from("collection_access_grants")
+        .select("collection_id")
+        .eq("fan_id", fanId)
+        .in("collection_id", known.map((c) => c.id));
+      const grantedIds = new Set((grants ?? []).map((g) => g.collection_id));
+      granted = known
+        .filter((c) => grantedIds.has(c.id))
+        .map((c) => c.telegram_channel_code as string);
+    }
+    // Not channel-specific — a fan either has logged into Onyx at least once
+    // or hasn't. Used by /forzar_corte_canal to tell "provisioned but never
+    // actually used it" apart from "already using Onyx", which `granted`
+    // alone can't do (a grant exists the moment the bot provisions someone,
+    // regardless of whether they ever log in).
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("last_login_at")
+      .eq("id", fanId)
+      .maybeSingle();
+    loggedIn = !!profile?.last_login_at;
   }
 
-  return NextResponse.json({ granted, unknownCodes });
+  return NextResponse.json({ granted, unknownCodes, loggedIn });
 }
