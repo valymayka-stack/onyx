@@ -37,6 +37,31 @@ export function notifyBotOfBan(telegramId: string, reason: string): void {
   });
 }
 
+// Awaited from middleware.ts's device-switch enforcement — a fan moving
+// from iPhone to the Android app must actually be kicked out of Telegram
+// before delivery_channel flips to "app", or they'd briefly hold both.
+// Still never throws: a failed revoke shouldn't block the request, since
+// the fan's Onyx-side access is what actually gates viewing from here on.
+export async function revokeTelegramAccess(
+  telegramId: string,
+  channelCodes: string[],
+): Promise<boolean> {
+  const config = bridgeConfig();
+  if (!config || channelCodes.length === 0) return false;
+
+  try {
+    const response = await fetch(`${config.baseUrl}/onyx/revoke-telegram-access`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-onyx-bridge-secret": config.secret },
+      body: JSON.stringify({ telegramId, channelCodes }),
+    });
+    return response.ok;
+  } catch (err) {
+    console.error("Failed to revoke Telegram access", err);
+    return false;
+  }
+}
+
 // Awaited (unlike notifyBotOfBan) since the iPhone gate page's copy depends
 // on whether this actually worked — but still never throws; a network
 // error or an unconfigured bridge both just mean "couldn't request it",

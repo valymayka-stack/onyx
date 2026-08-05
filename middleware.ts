@@ -1,7 +1,10 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { hasRole, getUserRoles } from "@/lib/auth/roles";
 import { getRequestIp } from "@/lib/security/requestIp";
+import { telegramIdFromEmail, revokeTelegramAccess } from "@/lib/security/telegramBridge";
+import { contentChannelForDevice, fanBridgedChannelCodes } from "@/lib/security/deliveryChannel";
 
 const PUBLIC_PREFIXES = ["/login", "/api/"];
 const MFA_PREFIXES = ["/mfa/enroll", "/mfa/verify"];
@@ -22,7 +25,8 @@ const ANDROID_APP_MARKER = "OnyxAndroidApp";
 const ANDROID_GATE_PATH = "/android-app-required";
 const MOBILE_GATE_PATH = "/mobile-required";
 const IPHONE_GATE_PATH = "/telegram-access";
-const GATE_PATHS = [ANDROID_GATE_PATH, MOBILE_GATE_PATH, IPHONE_GATE_PATH];
+const DEVICE_SWITCH_BLOCKED_PATH = "/device-switch-blocked";
+const GATE_PATHS = [ANDROID_GATE_PATH, MOBILE_GATE_PATH, IPHONE_GATE_PATH, DEVICE_SWITCH_BLOCKED_PATH];
 
 function isUngatedAndroidBrowser(userAgent: string): boolean {
   return /Android/i.test(userAgent) && !userAgent.includes(ANDROID_APP_MARKER);
@@ -99,7 +103,7 @@ export async function middleware(request: NextRequest) {
   // cookie survives.
   const { data: profile } = await supabase
     .from("profiles")
-    .select("banned_at, device_type, last_login_at")
+    .select("banned_at, device_type, last_login_at, delivery_channel, device_switch_used_at")
     .eq("id", user.id)
     .maybeSingle();
 
@@ -114,6 +118,12 @@ export async function middleware(request: NextRequest) {
   // again further down for the MFA check — computed once, reused for both.
   const roles = await getUserRoles(supabase, user.id);
   const isFan = roles.includes("fan");
+
+  // Set below when a fan's live device contradicts their locked delivery
+  // channel and the one free switch has already been spent — gates them to
+  // DEVICE_SWITCH_BLOCKED_PATH instead of letting them reach content on the
+  // "wrong" channel while still holding the other (see fuller comment below).
+  let deliveryChannelBlocked = false;
 
   // Fire-and-forget: informational only (see 0011_telegram_bridge_prep.sql),
   // so nothing downstream should wait on it. Skipped for /admin and /studio
@@ -155,6 +165,50 @@ export async function middleware(request: NextRequest) {
         .then(({ error }) => {
           if (error) console.error("Failed to update last_login_at", error);
         });
+    }
+
+    // Device-switch enforcement (2026-08) — fan-only, and only for fans
+    // with at least one telegram-bridged collection (nothing to enforce
+    // otherwise). Awaited, unlike the writes above: the Telegram kick has to
+    // actually complete before delivery_channel flips to "app", or a fan
+    // could briefly hold both channels at once — the exact leak this exists
+    // to close. Desktop/android_browser are excluded on purpose (see
+    // contentChannelForDevice) — neither one is a real content-consuming
+    // state, so passing through either can't count as "choosing" a channel.
+    const newChannel = isFan ? contentChannelForDevice(detectedDevice) : null;
+    if (newChannel) {
+      const admin = createAdminClient();
+      const bridgedCodes = await fanBridgedChannelCodes(admin, user.id);
+
+      if (bridgedCodes.length > 0) {
+        if (!profile?.delivery_channel) {
+          // First device ever seen for this fan — establishes the baseline,
+          // doesn't consume the one free switch.
+          await admin.from("profiles").update({ delivery_channel: newChannel }).eq("id", user.id);
+        } else if (newChannel !== profile.delivery_channel) {
+          if (profile.device_switch_used_at) {
+            // Already used their one allowed switch — block instead of
+            // silently letting them reach content on the new channel while
+            // the old one (Telegram membership, or the app's grant) is
+            // still live. An admin has to clear device_switch_used_at
+            // (see /admin/users/[userId]) before another switch is honored.
+            deliveryChannelBlocked = true;
+          } else {
+            const telegramId = telegramIdFromEmail(user.email);
+            if (telegramId && newChannel === "app") {
+              // Moving off Telegram: kick them out and revoke the invite
+              // link before granting the app side. The reverse direction
+              // (app -> telegram) needs no extra step here — landing on
+              // /telegram-access already (re)requests a fresh invite.
+              await revokeTelegramAccess(telegramId, bridgedCodes);
+            }
+            await admin
+              .from("profiles")
+              .update({ delivery_channel: newChannel, device_switch_used_at: new Date().toISOString() })
+              .eq("id", user.id);
+          }
+        }
+      }
     }
   }
 
@@ -228,6 +282,14 @@ export async function middleware(request: NextRequest) {
   // delivered photos, not at the people running the platform.
   const isPlatformPath =
     GATE_PATHS.includes(path) || path.startsWith("/admin") || path.startsWith("/studio");
+
+  // Checked before the normal device gates below: a fan blocked here would
+  // otherwise just fall through to whichever gate their current device
+  // maps to (e.g. android_app -> straight to /feed) and reach content on a
+  // channel they're not currently authorized for.
+  if (!isPlatformPath && deliveryChannelBlocked) {
+    return NextResponse.redirect(new URL(DEVICE_SWITCH_BLOCKED_PATH, request.url));
+  }
 
   if (!isPlatformPath && isUngatedAndroidBrowser(userAgent)) {
     return NextResponse.redirect(new URL(ANDROID_GATE_PATH, request.url));

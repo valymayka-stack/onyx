@@ -9,6 +9,7 @@ import AppHeader from "@/components/AppHeader";
 import AdminNav from "@/components/AdminNav";
 import BanToggleButton from "@/components/admin/BanToggleButton";
 import DeleteAccountButton from "@/components/admin/DeleteAccountButton";
+import ResetDeviceSwitchButton from "@/components/admin/ResetDeviceSwitchButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -36,7 +37,11 @@ export default async function AdminUserDetailPage({
   const [{ data: userData }, { data: profile }, { data: roleRows }, { data: grantRows }] =
     await Promise.all([
       admin.auth.admin.getUserById(userId),
-      admin.from("profiles").select("display_name, banned_at, device_type, last_login_at").eq("id", userId).maybeSingle(),
+      admin
+        .from("profiles")
+        .select("display_name, banned_at, device_type, last_login_at, delivery_channel, device_switch_used_at")
+        .eq("id", userId)
+        .maybeSingle(),
       admin.from("user_roles").select("role").eq("user_id", userId),
       admin
         .from("collection_access_grants")
@@ -90,6 +95,11 @@ export default async function AdminUserDetailPage({
     };
   });
 
+  // Only fans with at least one telegram-bridged collection are subject to
+  // the device-switch lock (0014_delivery_channel_lock.sql) — nothing to
+  // show or reset otherwise.
+  const hasBridgedGrant = grants.some((g) => g.telegramChannelCode);
+
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-8">
       <AppHeader
@@ -137,8 +147,22 @@ export default async function AdminUserDetailPage({
               Último inicio de sesión: {formatDateTime(profile.last_login_at)}
             </p>
           )}
-          <div className="flex gap-2">
+          {hasBridgedGrant && (
+            <p className="text-muted-foreground">
+              Canal de entrega actual:{" "}
+              <Badge variant="outline">{profile?.delivery_channel ?? "sin determinar"}</Badge>
+              {profile?.device_switch_used_at && (
+                <span className="ml-2">
+                  Cambio de dispositivo usado el {formatDateTime(profile.device_switch_used_at)} — bloqueado hasta que lo autorices.
+                </span>
+              )}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-2">
             <BanToggleButton userId={userId} banned={!!profile?.banned_at} />
+            {hasBridgedGrant && profile?.device_switch_used_at && (
+              <ResetDeviceSwitchButton userId={userId} />
+            )}
             {!roles.includes("admin") && (
               <DeleteAccountButton
                 endpoint="/api/admin/delete-fan"
