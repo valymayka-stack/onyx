@@ -1,7 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { issueContentToken } from "@/lib/signing/contentToken";
 import AppHeader from "@/components/AppHeader";
 import AdminNav from "@/components/AdminNav";
 import CollectionAddPhotos from "@/components/CollectionAddPhotos";
@@ -25,9 +24,6 @@ export default async function AdminManageCollectionPage({
 }) {
   const { collectionId } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   const { data: collection } = await supabase
     .from("content_collections")
@@ -94,13 +90,12 @@ export default async function AdminManageCollectionPage({
         <h2 className="text-sm font-medium text-muted-foreground">Fotos</h2>
         <div className="grid grid-cols-3 gap-2">
           {(items ?? []).map((item) => {
-            const token = issueContentToken(item.id, user!.id);
             return (
               <div key={item.id} className="flex flex-col gap-1">
                 <div className="relative">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={`/api/content/${item.id}?t=${token}`}
+                    src={`/api/admin-thumb/${item.id}`}
                     alt=""
                     className="aspect-square w-full rounded-lg object-cover"
                   />

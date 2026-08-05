@@ -1,6 +1,5 @@
 import { VideoOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { issueContentToken } from "@/lib/signing/contentToken";
 import AppHeader from "@/components/AppHeader";
 import AdminNav from "@/components/AdminNav";
 import HideToggleButton from "@/components/admin/HideToggleButton";
@@ -19,9 +18,6 @@ export const dynamic = "force-dynamic";
 
 export default async function AdminContentPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   const { data: collections } = await supabase
     .from("content_collections")
@@ -73,12 +69,11 @@ export default async function AdminContentPage() {
         </div>
       );
     }
-    const token = issueContentToken(itemId, user!.id);
     return (
       <div className="relative">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={`/api/content/${itemId}?t=${token}`}
+          src={`/api/admin-thumb/${itemId}`}
           alt=""
           className="aspect-square w-full rounded-lg object-cover"
         />
