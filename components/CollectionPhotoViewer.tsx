@@ -83,7 +83,10 @@ export default function CollectionPhotoViewer({
             <button
               key={item.id}
               type="button"
-              onClick={() => goTo(i)}
+              onClick={() => {
+                goTo(i);
+                setLightboxOpen(true);
+              }}
               className={cn(
                 "size-16 shrink-0 overflow-hidden rounded-lg ring-2 transition-opacity",
                 i === index ? "ring-primary" : "ring-transparent opacity-60 hover:opacity-100",
