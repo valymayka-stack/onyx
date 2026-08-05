@@ -13,17 +13,14 @@ const WINDOW_MINUTES = 2;
 // Deliberately generous: opening one busy collection legitimately fires a
 // request per photo all at once (the thumbnail strip in
 // CollectionPhotoViewer loads every photo, not just the current one), so
-// this has to sit well above any single realistic collection's size to
-// avoid banning someone for opening one big set. It's aimed at scripted
-// harvesting across MULTIPLE collections in a short window instead. Raised
-// from 40 to 55 after a real collection (52 photos) sat close enough to 40
-// that a fan opening it in full would have been flagged — 55 leaves
-// headroom above that. Still gated by WINDOW_MINUTES: 55 distinct photos
-// inside 2 minutes is still fast, so scripted multi-collection harvesting
-// is caught the same as before, just with more room for one big set. Not
-// empirically tuned against real traffic — revisit if it proves too loose
-// or too tight in practice.
-export const DISTINCT_ITEM_BAN_THRESHOLD = 55;
+// this has to sit well above any single realistic collection's size. Only
+// logs a security_event for admin review now (2026-08) — a fan legitimately
+// assigned many collections crossed this same threshold in one normal
+// session and got auto-banned, so it no longer bans on its own. Raised from
+// 40 to 55 after a real collection (52 photos) sat close enough to 40 that
+// a fan opening it in full would have been flagged. Not empirically tuned
+// against real traffic — revisit if it proves too loose or too tight.
+export const DISTINCT_ITEM_LOG_THRESHOLD = 55;
 
 export async function countDistinctItemsRecent(
   supabase: SupabaseClient,

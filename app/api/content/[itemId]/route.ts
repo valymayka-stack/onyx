@@ -8,8 +8,7 @@ import { countRecentAttempts, logAttempt } from "@/lib/security/rateLimiter";
 import { compositeVisibleWatermarkRaw } from "@/lib/watermark/tile";
 import { generateCode, embedInvisibleCode } from "@/lib/watermark/invisible";
 import { getRequestIp } from "@/lib/security/requestIp";
-import { countDistinctItemsRecent, DISTINCT_ITEM_BAN_THRESHOLD } from "@/lib/security/bulkDownloadDetector";
-import { applyBan } from "@/lib/security/banCascade";
+import { countDistinctItemsRecent, DISTINCT_ITEM_LOG_THRESHOLD } from "@/lib/security/bulkDownloadDetector";
 
 const CONTENT_REQUEST_LIMIT_PER_MINUTE = 60;
 
@@ -125,18 +124,14 @@ export async function GET(
     );
   }
 
-  // Bulk-download detection: no screenshot/DevTools signal can see a script
-  // harvesting every photo this account has access to, since it never
-  // touches a browser tab — this is the one check on the delivery path
-  // itself, independent of anything the client reports. Skipped for admins:
-  // applyBan() already no-ops on an admin target, but this check runs before
-  // that and was still rejecting the request with 404 on its own — the
-  // /admin/collections/[id] photo grid legitimately requests every photo in
-  // a collection in one page load, which is exactly this pattern for any
-  // collection at or above DISTINCT_ITEM_BAN_THRESHOLD photos.
+  // Bulk-download logging (2026-08): no longer auto-bans — a fan legitimately
+  // assigned many collections crosses the same distinctItemCount threshold
+  // as an actual scraper within one normal browsing session, so this was
+  // banning real customers. Still logged for the admin to review by hand;
+  // see app/(admin)/admin/security/page.tsx.
   if (!isAdmin) {
     const distinctItemCount = await countDistinctItemsRecent(admin, user.id);
-    if (distinctItemCount >= DISTINCT_ITEM_BAN_THRESHOLD) {
+    if (distinctItemCount >= DISTINCT_ITEM_LOG_THRESHOLD) {
       await admin.from("security_events").insert({
         event_type: "bulk_download_suspected",
         user_id: user.id,
@@ -144,13 +139,6 @@ export async function GET(
         user_agent: request.headers.get("user-agent"),
         metadata: { distinctItemCount },
       });
-      await applyBan(admin, {
-        userId: user.id,
-        ip,
-        fingerprint: null,
-        reason: "bulk_download_suspected",
-      });
-      return NextResponse.json({ error: "not found" }, { status: 404 });
     }
   }
 

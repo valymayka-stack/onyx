@@ -14,15 +14,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 // Kept in sync with AUTO_BAN_EVENT_TYPES in app/api/security-events/route.ts
-// (plus bulk_download_suspected, which bans through its own route in
-// app/api/content/[itemId]/route.ts rather than that one) — purely for the
-// destructive badge below, so this list drifting out of sync doesn't affect
-// any actual ban decision, just whether this page highlights it correctly.
-// "blur" itself is deliberately NOT in this set even though it can ban — a
-// single blur row never bans on its own, only the 3rd-within-2-minutes does
-// (see countRecentBlurEvents), so flagging every blur row here would be
-// misleading; the ban it eventually causes shows up in ban_history under
-// "excessive_tab_switching" instead.
+// — purely for the destructive badge below, so this list drifting out of
+// sync doesn't affect any actual ban decision, just whether this page
+// highlights it correctly. "blur" itself is deliberately NOT in this set
+// even though it can ban — a single blur row never bans on its own, only
+// the 3rd-within-2-minutes does (see countRecentBlurEvents), so flagging
+// every blur row here would be misleading; the ban it eventually causes
+// shows up in ban_history under "excessive_tab_switching" instead.
+// bulk_download_suspected is also NOT in this set (2026-08) — it only logs
+// now, no longer bans (see app/api/content/[itemId]/route.ts).
 const BAN_TRIGGERING_EVENTS = new Set([
   "devtools_key_blocked",
   "devtools_suspected",
@@ -32,7 +32,6 @@ const BAN_TRIGGERING_EVENTS = new Set([
   "automation_detected",
   "printscreen_key_detected",
   "save_or_print_blocked",
-  "bulk_download_suspected",
 ]);
 
 export default async function AdminSecurityPage() {
