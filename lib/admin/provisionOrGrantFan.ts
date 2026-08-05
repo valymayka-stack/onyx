@@ -38,8 +38,30 @@ export async function provisionOrGrantFan({
   }
 
   const admin = createAdminClient();
-  const email = `${telegramId}@onyx.com`;
 
+  // Validate the channel maps to a real collection *before* touching auth at
+  // all. A channelCode that Onyx has no collection for (e.g. Grupo, which
+  // deliberately never gets one) must fail with zero side effects — this
+  // used to check after creating the account, which left an orphaned,
+  // credential-less account behind on every rejected call.
+  let collection: { id: string; title: string } | null = null;
+  if (channelCode) {
+    const { data, error: collectionError } = await admin
+      .from("content_collections")
+      .select("id, title")
+      .eq("telegram_channel_code", channelCode)
+      .maybeSingle();
+
+    if (collectionError || !data) {
+      throw new ProvisionFanError(
+        `No existe ninguna colección con telegram_channel_code="${channelCode}"`,
+        404,
+      );
+    }
+    collection = data;
+  }
+
+  const email = `${telegramId}@onyx.com`;
   const existingId = await findFanIdByEmail(admin, email);
 
   let userId: string;
@@ -70,20 +92,7 @@ export async function provisionOrGrantFan({
   }
 
   let grantedCollection: { id: string; title: string } | null = null;
-  if (channelCode) {
-    const { data: collection, error: collectionError } = await admin
-      .from("content_collections")
-      .select("id, title")
-      .eq("telegram_channel_code", channelCode)
-      .maybeSingle();
-
-    if (collectionError || !collection) {
-      throw new ProvisionFanError(
-        `No existe ninguna colección con telegram_channel_code="${channelCode}"`,
-        404,
-      );
-    }
-
+  if (collection) {
     // collection_access_grants has a unique (collection_id, fan_id)
     // constraint (0008_collections.sql) — upsert + ignoreDuplicates makes a
     // repeat purchase of the same collection a no-op instead of an error.

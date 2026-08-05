@@ -66,6 +66,19 @@ export default async function AdminUserDetailPage({
         .limit(20)
     : { data: null };
 
+  // Reported by the bot right after it tries to DM Onyx credentials/access
+  // (see app/api/bot/credential-delivery/route.ts) — the only way to tell
+  // "never logged in because the DM never arrived" apart from "never logged
+  // in despite having it," which otherwise look identical here.
+  const { data: deliveryRows } = isFan
+    ? await admin
+        .from("credential_deliveries")
+        .select("channel_code, status, created_at")
+        .eq("fan_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(20)
+    : { data: null };
+
   // Fan accounts are provisioned as "{telegramId}@onyx.com" (see
   // provisionFan.ts) — the Telegram ID is just the email's local part.
   const telegramId =
@@ -208,6 +221,33 @@ export default async function AdminUserDetailPage({
           ))}
         </CardContent>
       </Card>
+
+      {isFan && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Entregas de credenciales por Telegram</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-2">
+            {(!deliveryRows || deliveryRows.length === 0) && (
+              <p className="text-sm text-muted-foreground">
+                El bot no ha reportado ningún envío de credenciales para esta cuenta.
+              </p>
+            )}
+            {deliveryRows?.map((row, i) => (
+              <div
+                key={i}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border/60 px-3 py-2 text-sm"
+              >
+                <span>{formatDateTime(row.created_at)}</span>
+                {row.channel_code && <Badge variant="outline">{row.channel_code}</Badge>}
+                <Badge variant={row.status === "blocked" ? "destructive" : "secondary"}>
+                  {row.status === "blocked" ? "bloqueado por el usuario" : "entregado"}
+                </Badge>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {isFan && (
         <Card>
