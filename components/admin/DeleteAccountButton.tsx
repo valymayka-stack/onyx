@@ -18,12 +18,14 @@ export default function DeleteAccountButton({
   confirmText,
   redirectTo,
   warningDetail,
+  buttonLabel = "Eliminar cuenta permanentemente",
 }: {
   endpoint: string;
   bodyKey: string;
   id: string;
   confirmText: string;
   redirectTo: string;
+  buttonLabel?: string;
   warningDetail: string;
 }) {
   const router = useRouter();
@@ -57,7 +59,7 @@ export default function DeleteAccountButton({
     return (
       <Button variant="destructive" size="sm" onClick={() => setExpanded(true)}>
         <Trash2 data-icon="inline-start" />
-        Eliminar cuenta permanentemente
+        {buttonLabel}
       </Button>
     );
   }

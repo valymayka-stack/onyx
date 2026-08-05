@@ -136,6 +136,7 @@ export default async function AdminManageCollectionPage({
         id={collectionId}
         confirmText={collection.title}
         redirectTo="/admin/collections"
+        buttonLabel="Eliminar colección permanentemente"
         warningDetail={`Esto elimina la colección "${collection.title}" (${items?.length ?? 0} foto(s)), sus fotos, y el acceso otorgado a cualquier fan.`}
       />
     </main>
