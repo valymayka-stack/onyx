@@ -8,6 +8,7 @@ import CollectionGrantsManager from "@/components/CollectionGrantsManager";
 import CollectionEditForm from "@/components/CollectionEditForm";
 import SetCoverButton from "@/components/SetCoverButton";
 import DeleteContentButton from "@/components/DeleteContentButton";
+import DeleteAccountButton from "@/components/admin/DeleteAccountButton";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -127,6 +128,15 @@ export default async function AdminManageCollectionPage({
         initialDescription={collection.description}
         isAdmin
         initialTelegramChannelCode={collection.telegram_channel_code ?? ""}
+      />
+
+      <DeleteAccountButton
+        endpoint="/api/admin/delete-collection"
+        bodyKey="collectionId"
+        id={collectionId}
+        confirmText={collection.title}
+        redirectTo="/admin/collections"
+        warningDetail={`Esto elimina la colección "${collection.title}" (${items?.length ?? 0} foto(s)), sus fotos, y el acceso otorgado a cualquier fan.`}
       />
     </main>
   );
