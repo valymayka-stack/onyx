@@ -9,6 +9,7 @@ interface PhotoItem {
   id: string;
   url: string;
   isCover: boolean;
+  contentType: "image" | "video";
 }
 
 export default function CollectionPhotoViewer({
@@ -41,16 +42,27 @@ export default function CollectionPhotoViewer({
   return (
     <div className="flex flex-col gap-3">
       <div className="relative flex items-center justify-center overflow-hidden rounded-2xl bg-black">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          key={current.id}
-          src={current.url}
-          alt=""
-          className="max-h-[70vh] w-full cursor-zoom-in object-contain"
-          draggable={false}
-          style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
-          onClick={() => setLightboxOpen(true)}
-        />
+        {current.contentType === "video" ? (
+          <video
+            key={current.id}
+            src={current.url}
+            controls
+            playsInline
+            className="max-h-[70vh] w-full object-contain"
+            style={{ WebkitTouchCallout: "none" }}
+          />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            key={current.id}
+            src={current.url}
+            alt=""
+            className="max-h-[70vh] w-full cursor-zoom-in object-contain"
+            draggable={false}
+            style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
+            onClick={() => setLightboxOpen(true)}
+          />
+        )}
 
         {items.length > 1 && (
           <>
@@ -92,20 +104,31 @@ export default function CollectionPhotoViewer({
                 i === index ? "ring-primary" : "ring-transparent opacity-60 hover:opacity-100",
               )}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={item.url}
-                alt=""
-                className="size-full object-cover"
-                draggable={false}
-                style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
-              />
+              {item.contentType === "video" ? (
+                <video
+                  src={item.url}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  className="size-full object-cover"
+                  style={{ WebkitTouchCallout: "none" }}
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={item.url}
+                  alt=""
+                  className="size-full object-cover"
+                  draggable={false}
+                  style={{ WebkitTouchCallout: "none", WebkitUserSelect: "none" }}
+                />
+              )}
             </button>
           ))}
         </div>
       )}
 
-      {lightboxOpen && (
+      {lightboxOpen && current.contentType === "image" && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 p-4"
           onClick={() => setLightboxOpen(false)}

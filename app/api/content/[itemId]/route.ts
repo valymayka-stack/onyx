@@ -117,11 +117,22 @@ export async function GET(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
+  // No watermarking for video, deliberately — there's no per-viewer marking
+  // pipeline for it (the visible/invisible marks are both image-pixel
+  // operations), so a video is delivered as uploaded to whoever the checks
+  // above already authorized. Redirects to a short-lived signed URL rather
+  // than proxying the bytes through this route: the browser's <video> tag
+  // then does its own HTTP Range requests straight against Storage, which
+  // supports seeking natively — reimplementing Range handling here would
+  // just be a slower version of what Storage already does.
   if (item.content_type === "video") {
-    return NextResponse.json(
-      { error: "video delivery not implemented yet" },
-      { status: 501 },
-    );
+    const { data: signed, error: signError } = await admin.storage
+      .from("content-raw")
+      .createSignedUrl(item.storage_path, 120);
+    if (signError || !signed) {
+      return NextResponse.json({ error: "storage read failed" }, { status: 500 });
+    }
+    return NextResponse.redirect(signed.signedUrl);
   }
 
   // Bulk-download logging (2026-08): no longer auto-bans — a fan legitimately

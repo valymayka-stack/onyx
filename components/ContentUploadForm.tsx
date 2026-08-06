@@ -56,7 +56,7 @@ export default function ContentUploadForm({
     const { error: insertError } = await supabase.from("content_items").insert({
       creator_id: user.id,
       storage_path: path,
-      content_type: "image",
+      content_type: file.type.startsWith("video/") ? "video" : "image",
       is_premium: isPremium,
       consent_record_id: consentRecordId,
     });
@@ -84,7 +84,7 @@ export default function ContentUploadForm({
             <Input
               id="content-file"
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               required
               onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />

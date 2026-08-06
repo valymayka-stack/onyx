@@ -39,7 +39,7 @@ export default function AdminAddPhotoForm({
       await supabase.from("content_items").insert({
         creator_id: creatorId,
         storage_path: path,
-        content_type: "image",
+        content_type: file.type.startsWith("video/") ? "video" : "image",
         is_premium: true,
         collection_id: collectionId,
         consent_record_id: consentRecordId,
@@ -55,7 +55,7 @@ export default function AdminAddPhotoForm({
     <form onSubmit={handleSubmit} className="flex items-center gap-2">
       <Input
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         className="max-w-56"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />

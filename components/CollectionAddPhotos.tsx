@@ -52,7 +52,7 @@ export default function CollectionAddPhotos({
         const { error: insertError } = await supabase.from("content_items").insert({
           creator_id: user.id,
           storage_path: path,
-          content_type: "image",
+          content_type: file.type.startsWith("video/") ? "video" : "image",
           is_premium: true,
           collection_id: collectionId,
           is_cover: false,
@@ -83,7 +83,7 @@ export default function CollectionAddPhotos({
             <Input
               id="add-photos"
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               multiple
               required
               onChange={(e) => setFiles(Array.from(e.target.files ?? []))}

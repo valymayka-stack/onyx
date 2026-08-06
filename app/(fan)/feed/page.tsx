@@ -50,7 +50,7 @@ export default async function FeedPage() {
     collectionIds.length > 0
       ? await admin
           .from("content_items")
-          .select("id, collection_id, is_cover")
+          .select("id, collection_id, is_cover, content_type")
           .in("collection_id", collectionIds)
           .order("is_cover", { ascending: false })
       : { data: [] };
@@ -77,6 +77,7 @@ export default async function FeedPage() {
                 .map((item) => ({
                   id: item.id,
                   isCover: item.is_cover,
+                  contentType: (item.content_type === "video" ? "video" : "image") as "image" | "video",
                   url: `/api/content/${item.id}?t=${issueContentToken(item.id, user!.id)}`,
                 }));
 

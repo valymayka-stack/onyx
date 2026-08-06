@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { VideoOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AppHeader from "@/components/AppHeader";
@@ -40,7 +41,7 @@ export default async function ManageCollectionPage({
 
   const { data: items } = await supabase
     .from("content_items")
-    .select("id, is_cover, created_at")
+    .select("id, is_cover, created_at, content_type")
     .eq("collection_id", collectionId)
     .order("is_cover", { ascending: false })
     .order("created_at", { ascending: false });
@@ -80,12 +81,18 @@ export default async function ManageCollectionPage({
             return (
               <div key={item.id} className="flex flex-col gap-1">
                 <div className="relative">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={`/api/admin-thumb/${item.id}`}
-                    alt=""
-                    className="aspect-square w-full rounded-lg object-cover"
-                  />
+                  {item.content_type === "video" ? (
+                    <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      <VideoOff className="size-5" />
+                    </div>
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={`/api/admin-thumb/${item.id}`}
+                      alt=""
+                      className="aspect-square w-full rounded-lg object-cover"
+                    />
+                  )}
                   {item.is_cover && (
                     <Badge className="absolute left-1 top-1" variant="secondary">
                       portada
