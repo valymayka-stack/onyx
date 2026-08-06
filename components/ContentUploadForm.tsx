@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
-import { MAX_UPLOAD_BYTES, oversizedFileMessage } from "@/lib/uploadLimits";
+import { MAX_UPLOAD_BYTES, oversizedFileMessage, isVideoFile } from "@/lib/uploadLimits";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -62,7 +62,7 @@ export default function ContentUploadForm({
     const { error: insertError } = await supabase.from("content_items").insert({
       creator_id: user.id,
       storage_path: path,
-      content_type: file.type.startsWith("video/") ? "video" : "image",
+      content_type: isVideoFile(file) ? "video" : "image",
       is_premium: isPremium,
       consent_record_id: consentRecordId,
     });

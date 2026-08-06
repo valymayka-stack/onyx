@@ -8,3 +8,15 @@ export function oversizedFileMessage(file: File): string {
   const mb = (file.size / (1024 * 1024)).toFixed(1);
   return `"${file.name}" pesa ${mb}MB — el límite actual es 50MB por archivo. Comprime el video o sube un fragmento más corto.`;
 }
+
+const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "webm", "avi", "mkv"];
+
+// Some browsers (notably iOS/macOS Safari with .MOV) leave File.type empty
+// or non-standard for video files instead of reporting "video/*" — fall
+// back to the extension so those don't silently get stored as content_type
+// "image", which breaks their thumbnail/delivery rendering downstream.
+export function isVideoFile(file: File): boolean {
+  if (file.type.startsWith("video/")) return true;
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return VIDEO_EXTENSIONS.includes(ext);
+}

@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
-import { MAX_UPLOAD_BYTES, oversizedFileMessage } from "@/lib/uploadLimits";
+import { MAX_UPLOAD_BYTES, oversizedFileMessage, isVideoFile } from "@/lib/uploadLimits";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -52,7 +52,7 @@ export default function AdminAddPhotoForm({
     await supabase.from("content_items").insert({
       creator_id: creatorId,
       storage_path: path,
-      content_type: file.type.startsWith("video/") ? "video" : "image",
+      content_type: isVideoFile(file) ? "video" : "image",
       is_premium: true,
       collection_id: collectionId,
       consent_record_id: consentRecordId,
