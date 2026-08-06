@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Upload, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { MAX_UPLOAD_BYTES, oversizedFileMessage } from "@/lib/uploadLimits";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,11 @@ export default function ContentUploadForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!file) return;
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(oversizedFileMessage(file));
+      return;
+    }
 
     setLoading(true);
     setError(null);
