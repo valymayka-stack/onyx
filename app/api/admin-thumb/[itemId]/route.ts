@@ -70,6 +70,10 @@ export async function GET(
 
   const originalBuffer = Buffer.from(await fileBlob.arrayBuffer());
   const thumbnail = await sharp(originalBuffer)
+    .rotate() // rotate() with no args normalizes EXIF orientation — without
+    // it, phone photos with an EXIF orientation tag (rather than pixels
+    // actually rotated) render sideways here, same fix already applied in
+    // lib/watermark/tile.ts for the fan-facing delivery path
     .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
     .jpeg({ quality: 80 })
     .toBuffer();
