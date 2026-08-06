@@ -66,6 +66,7 @@ export async function POST(request: NextRequest) {
 
   let granted: string[] = [];
   let loggedIn = false;
+  let deviceType: string | null = null;
   const email = `${telegramId}@onyx.com`;
   const fanId = await findFanIdByEmail(admin, email);
   if (fanId) {
@@ -84,14 +85,18 @@ export async function POST(request: NextRequest) {
     // or hasn't. Used by /forzar_corte_canal to tell "provisioned but never
     // actually used it" apart from "already using Onyx", which `granted`
     // alone can't do (a grant exists the moment the bot provisions someone,
-    // regardless of whether they ever log in).
+    // regardless of whether they ever log in). deviceType is whatever
+    // middleware.ts's live device detection last recorded (iphone /
+    // android_app / android_browser / other_mobile / desktop) — null until
+    // the first login sets it.
     const { data: profile } = await admin
       .from("profiles")
-      .select("last_login_at")
+      .select("last_login_at, device_type")
       .eq("id", fanId)
       .maybeSingle();
     loggedIn = !!profile?.last_login_at;
+    deviceType = profile?.device_type ?? null;
   }
 
-  return NextResponse.json({ granted, unknownCodes, loggedIn });
+  return NextResponse.json({ granted, unknownCodes, loggedIn, deviceType });
 }
