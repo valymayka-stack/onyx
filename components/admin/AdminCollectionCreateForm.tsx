@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FolderPlus, AlertCircle } from "lucide-react";
 import { createClient } from "@/lib/supabase/browser";
+import { MAX_UPLOAD_BYTES, oversizedFileMessage, isVideoFile } from "@/lib/uploadLimits";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -51,6 +52,12 @@ export default function AdminCollectionCreateForm({
     }
     const consentRecordId = selectedCreator.consentRecordId;
 
+    const oversized = photos.find((f) => f.size > MAX_UPLOAD_BYTES);
+    if (oversized) {
+      setError(oversizedFileMessage(oversized));
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -88,7 +95,7 @@ export default function AdminCollectionCreateForm({
         .insert({
           creator_id: creatorId,
           storage_path: path,
-          content_type: "image",
+          content_type: isCover ? "image" : isVideoFile(file) ? "video" : "image",
           is_premium: true,
           collection_id: collectionId,
           is_cover: isCover,
@@ -196,7 +203,7 @@ export default function AdminCollectionCreateForm({
             <Input
               id="col-photos"
               type="file"
-              accept="image/*"
+              accept="image/*,video/*"
               multiple
               required
               onChange={(e) => setPhotos(Array.from(e.target.files ?? []))}
