@@ -5,6 +5,7 @@ import AppHeader from "@/components/AppHeader";
 import FanNav from "@/components/FanNav";
 import ProtectedContentGuard from "@/components/ProtectedContentGuard";
 import GroupFeedViewer from "@/components/GroupFeedViewer";
+import { Card, CardContent } from "@/components/ui/card";
 
 // Landing page for fans — the infinite-scroll Grupo/Exclusive Chivis feed.
 // "Inicio" in the drawer nav points here too (there's no separate home
@@ -18,7 +19,7 @@ export default async function FeedPage() {
   } = await supabase.auth.getUser();
 
   const admin = createAdminClient();
-  const { posts, nextCursor } = await getGrupoFeedPage(admin, user!.id, null);
+  const { posts, nextCursor, expired } = await getGrupoFeedPage(admin, user!.id, null);
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-8">
@@ -26,7 +27,17 @@ export default async function FeedPage() {
       <AppHeader title="Grupo" subtitle="Lo más reciente" />
 
       <ProtectedContentGuard>
-        <GroupFeedViewer initialPosts={posts} initialNextCursor={nextCursor} />
+        {expired ? (
+          <Card>
+            <CardContent>
+              <p className="rounded-lg border border-border/60 bg-muted/40 px-4 py-6 text-center text-sm text-muted-foreground">
+                Tu acceso venció — renueva tu suscripción para seguir disfrutando este contenido.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <GroupFeedViewer initialPosts={posts} initialNextCursor={nextCursor} />
+        )}
       </ProtectedContentGuard>
     </main>
   );

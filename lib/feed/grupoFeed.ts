@@ -29,7 +29,7 @@ export async function getGrupoFeedPage(
   admin: SupabaseClient,
   userId: string,
   cursor: string | null,
-): Promise<{ posts: FeedPost[]; nextCursor: string | null }> {
+): Promise<{ posts: FeedPost[]; nextCursor: string | null; expired: boolean }> {
   const now = new Date();
 
   const { data: grants } = await admin
@@ -37,24 +37,34 @@ export async function getGrupoFeedPage(
     .select("collection_id, expires_at")
     .eq("fan_id", userId);
 
+  const allGrantedIds = (grants ?? []).map((g) => g.collection_id);
   const activeGrantedIds = (grants ?? [])
     .filter((g) => !g.expires_at || new Date(g.expires_at) > now)
     .map((g) => g.collection_id);
 
-  if (activeGrantedIds.length === 0) {
-    return { posts: [], nextCursor: null };
+  if (allGrantedIds.length === 0) {
+    return { posts: [], nextCursor: null, expired: false };
   }
 
-  const { data: feedCollections } = await admin
+  // Checked against *every* granted collection (expired or not) so an
+  // expired Exclusive Chivis grant still renders a clear "renueva tu
+  // suscripción" prompt — same treatment as the classic collections view at
+  // /feed/colecciones — instead of silently looking like an empty feed.
+  const { data: allFeedCollections } = await admin
     .from("content_collections")
     .select("id")
     .eq("is_hidden", false)
     .eq("is_feed", true)
-    .in("id", activeGrantedIds);
+    .in("id", allGrantedIds);
 
-  const feedCollectionIds = (feedCollections ?? []).map((c) => c.id);
+  const allFeedCollectionIds = (allFeedCollections ?? []).map((c) => c.id);
+  if (allFeedCollectionIds.length === 0) {
+    return { posts: [], nextCursor: null, expired: false };
+  }
+
+  const feedCollectionIds = allFeedCollectionIds.filter((id) => activeGrantedIds.includes(id));
   if (feedCollectionIds.length === 0) {
-    return { posts: [], nextCursor: null };
+    return { posts: [], nextCursor: null, expired: true };
   }
 
   let query = admin
@@ -111,5 +121,5 @@ export async function getGrupoFeedPage(
     };
   });
 
-  return { posts, nextCursor };
+  return { posts, nextCursor, expired: false };
 }
