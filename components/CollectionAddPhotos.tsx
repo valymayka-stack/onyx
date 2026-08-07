@@ -39,6 +39,7 @@ export default function CollectionAddPhotos({
   const [publishAt, setPublishAt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState("Publicando…");
 
   // In feed mode a post can be text-only, so "nothing to submit" means no
   // files AND no caption — classic collections keep requiring a file.
@@ -91,17 +92,40 @@ export default function CollectionAddPhotos({
         if (insertError) throw new Error(insertError.message);
       } else {
         for (const file of files) {
-          const ext = file.name.split(".").pop() || "jpg";
-          const path = `${creatorId}/collections/${collectionId}/${crypto.randomUUID()}.${ext}`;
-          const { error: uploadError } = await supabase.storage
-            .from("content-raw")
-            .upload(path, file, { contentType: file.type });
-          if (uploadError) throw new Error(uploadError.message);
+          const isVideo = isVideoFile(file);
+          let path: string;
+
+          if (isVideo) {
+            // Routed through the server instead of a direct browser->Storage
+            // upload: a phone's raw export (.MOV/HEVC, etc.) plays fine on
+            // the device that recorded it but not in most fans' browsers —
+            // this transcodes to a universally-playable H.264/AAC mp4 first
+            // (see app/api/studio/upload-video/route.ts).
+            setLoadingLabel("Procesando video… puede tardar un poco");
+            const videoForm = new FormData();
+            videoForm.set("collectionId", collectionId);
+            videoForm.set("file", file);
+            const res = await fetch("/api/studio/upload-video", {
+              method: "POST",
+              body: videoForm,
+            });
+            const body = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(body?.error ?? "No se pudo procesar el video.");
+            path = body.storagePath;
+            setLoadingLabel("Publicando…");
+          } else {
+            const ext = file.name.split(".").pop() || "jpg";
+            path = `${creatorId}/collections/${collectionId}/${crypto.randomUUID()}.${ext}`;
+            const { error: uploadError } = await supabase.storage
+              .from("content-raw")
+              .upload(path, file, { contentType: file.type });
+            if (uploadError) throw new Error(uploadError.message);
+          }
 
           const { error: insertError } = await supabase.from("content_items").insert({
             creator_id: creatorId,
             storage_path: path,
-            content_type: isVideoFile(file) ? "video" : "image",
+            content_type: isVideo ? "video" : "image",
             is_premium: true,
             collection_id: collectionId,
             is_cover: false,
@@ -115,11 +139,13 @@ export default function CollectionAddPhotos({
       }
     } catch (err) {
       setLoading(false);
+      setLoadingLabel("Publicando…");
       setError(err instanceof Error ? err.message : "No se pudo subir el contenido.");
       return;
     }
 
     setLoading(false);
+    setLoadingLabel("Publicando…");
     setFiles([]);
     setCaption("");
     setPublishAt("");
@@ -181,7 +207,7 @@ export default function CollectionAddPhotos({
 
           <Button type="submit" disabled={loading || !canSubmit}>
             <Upload data-icon="inline-start" />
-            {loading ? "Publicando…" : isFeed ? "Publicar" : "Añadir a la colección"}
+            {loading ? loadingLabel : isFeed ? "Publicar" : "Añadir a la colección"}
           </Button>
         </form>
       </CardContent>
