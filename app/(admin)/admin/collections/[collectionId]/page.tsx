@@ -125,7 +125,13 @@ export default async function AdminManageCollectionPage({
         </div>
       </section>
 
-      {consent && <CollectionAddPhotos collectionId={collectionId} consentRecordId={consent.id} />}
+      {consent && (
+        <CollectionAddPhotos
+          collectionId={collectionId}
+          creatorId={collection.creator_id}
+          consentRecordId={consent.id}
+        />
+      )}
 
       <CollectionGrantsManager collectionId={collectionId} grants={grants} />
 

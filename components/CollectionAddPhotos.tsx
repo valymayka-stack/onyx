@@ -12,11 +12,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+// datetime-local gives a naive "YYYY-MM-DDTHH:mm" string with no timezone —
+// `new Date(...)` would interpret it using whatever timezone the uploading
+// device happens to be set to, which isn't reliable. Mexico City has had no
+// DST since the 2022 reform, so its offset is a fixed -06:00 year-round —
+// appending it explicitly makes the entered time deterministic regardless
+// of the browser's own clock/timezone settings.
+function mexicoCityDateTimeToIso(datetimeLocal: string): string {
+  return new Date(`${datetimeLocal}:00-06:00`).toISOString();
+}
+
 export default function CollectionAddPhotos({
   collectionId,
+  creatorId,
   consentRecordId,
 }: {
   collectionId: string;
+  creatorId: string;
   consentRecordId: string;
 }) {
   const router = useRouter();
@@ -53,14 +65,14 @@ export default function CollectionAddPhotos({
     try {
       for (const file of files) {
         const ext = file.name.split(".").pop() || "jpg";
-        const path = `${user.id}/collections/${collectionId}/${crypto.randomUUID()}.${ext}`;
+        const path = `${creatorId}/collections/${collectionId}/${crypto.randomUUID()}.${ext}`;
         const { error: uploadError } = await supabase.storage
           .from("content-raw")
           .upload(path, file, { contentType: file.type });
         if (uploadError) throw new Error(uploadError.message);
 
         const { error: insertError } = await supabase.from("content_items").insert({
-          creator_id: user.id,
+          creator_id: creatorId,
           storage_path: path,
           content_type: isVideoFile(file) ? "video" : "image",
           is_premium: true,
@@ -68,7 +80,7 @@ export default function CollectionAddPhotos({
           is_cover: false,
           consent_record_id: consentRecordId,
           caption: caption.trim() || null,
-          publish_at: publishAt ? new Date(publishAt).toISOString() : null,
+          publish_at: publishAt ? mexicoCityDateTimeToIso(publishAt) : null,
         });
         if (insertError) throw new Error(insertError.message);
       }
