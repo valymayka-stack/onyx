@@ -2,14 +2,17 @@ import { notFound } from "next/navigation";
 import { VideoOff } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { issueContentToken } from "@/lib/signing/contentToken";
 import AppHeader from "@/components/AppHeader";
 import AdminNav from "@/components/AdminNav";
 import CollectionAddPhotos from "@/components/CollectionAddPhotos";
 import CollectionGrantsManager from "@/components/CollectionGrantsManager";
 import CollectionEditForm from "@/components/CollectionEditForm";
+import GroupFeedViewer from "@/components/GroupFeedViewer";
 import SetCoverButton from "@/components/SetCoverButton";
 import DeleteContentButton from "@/components/DeleteContentButton";
 import DeleteAccountButton from "@/components/admin/DeleteAccountButton";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export const dynamic = "force-dynamic";
@@ -26,6 +29,9 @@ export default async function AdminManageCollectionPage({
 }) {
   const { collectionId } = await params;
   const supabase = await createClient();
+  const {
+    data: { user: sessionUser },
+  } = await supabase.auth.getUser();
 
   const { data: collection } = await supabase
     .from("content_collections")
@@ -54,10 +60,52 @@ export default async function AdminManageCollectionPage({
 
   const { data: items } = await supabase
     .from("content_items")
-    .select("id, is_cover, created_at, content_type")
+    .select("id, is_cover, created_at, content_type, caption, publish_at, post_group_id")
     .eq("collection_id", collectionId)
     .order("is_cover", { ascending: false })
     .order("created_at", { ascending: false });
+
+  // Feed preview: groups the same rows into posts the way the real Grupo
+  // feed would (see lib/feed/grupoFeed.ts), but — unlike the fan-facing
+  // feed — includes not-yet-published posts too (tagged "Programado"), so
+  // the admin can check scheduled content before it goes live, without
+  // needing the gated Android device the real fan feed requires.
+  let feedPreviewPosts: {
+    postGroupId: string;
+    caption: string | null;
+    createdAt: string;
+    scheduled: boolean;
+    items: { id: string; contentType: "image" | "video" | "text"; url?: string }[];
+  }[] = [];
+  if (collection.is_feed && sessionUser) {
+    const now = new Date();
+    const groupOrder: string[] = [];
+    const groups = new Map<string, NonNullable<typeof items>>();
+    for (const row of items ?? []) {
+      if (!groups.has(row.post_group_id)) {
+        groupOrder.push(row.post_group_id);
+        groups.set(row.post_group_id, []);
+      }
+      groups.get(row.post_group_id)!.push(row);
+    }
+    feedPreviewPosts = groupOrder.map((groupId) => {
+      const rows = groups.get(groupId)!;
+      return {
+        postGroupId: groupId,
+        caption: rows[0]!.caption,
+        createdAt: rows[0]!.created_at,
+        scheduled: !!rows[0]!.publish_at && new Date(rows[0]!.publish_at) > now,
+        items: rows.map((r) => ({
+          id: r.id,
+          contentType: r.content_type as "image" | "video" | "text",
+          url:
+            r.content_type === "text"
+              ? undefined
+              : `/api/content/${r.id}?t=${issueContentToken(r.id, sessionUser.id)}`,
+        })),
+      };
+    });
+  }
 
   const { data: grantRows } = await supabase
     .from("collection_access_grants")
@@ -87,6 +135,21 @@ export default async function AdminManageCollectionPage({
         subtitle={`@${creator?.handle ?? "—"} · ${items?.length ?? 0} foto(s)`}
       />
       <AdminNav />
+
+      {collection.is_feed && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Vista previa del feed</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <GroupFeedViewer
+              initialPosts={feedPreviewPosts}
+              initialNextCursor={null}
+              paginated={false}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-muted-foreground">Fotos</h2>

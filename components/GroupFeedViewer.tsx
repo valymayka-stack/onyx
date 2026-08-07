@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import CollectionPhotoViewer from "@/components/CollectionPhotoViewer";
 import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 
 interface FeedItem {
   id: string;
@@ -15,6 +16,10 @@ interface FeedPost {
   caption: string | null;
   createdAt: string;
   items: FeedItem[];
+  // Only ever set by the admin preview (app/(admin)/admin/collections/[id])
+  // — the real fan feed never includes not-yet-published posts in the first
+  // place, so this is always undefined there.
+  scheduled?: boolean;
 }
 
 // Stacked, scroll-fed feed for Grupo/Exclusive Chivis — deliberately not the
@@ -26,12 +31,17 @@ interface FeedPost {
 export default function GroupFeedViewer({
   initialPosts,
   initialNextCursor,
+  paginated = true,
 }: {
   initialPosts: FeedPost[];
   initialNextCursor: string | null;
+  // The admin preview passes false: it renders every post for a collection
+  // in one shot (own query, not scoped to the admin's own fan grants), so
+  // there's no /api/feed/grupo cursor for it to page through.
+  paginated?: boolean;
 }) {
   const [posts, setPosts] = useState(initialPosts);
-  const [cursor, setCursor] = useState(initialNextCursor);
+  const [cursor, setCursor] = useState(paginated ? initialNextCursor : null);
   const [loading, setLoading] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -73,6 +83,11 @@ export default function GroupFeedViewer({
       {posts.map((post) => (
         <Card key={post.postGroupId}>
           <CardContent className="flex flex-col gap-3">
+            {post.scheduled && (
+              <Badge variant="outline" className="w-fit">
+                Programado — aún no visible para fans
+              </Badge>
+            )}
             {post.items[0]?.contentType === "text" ? (
               <p className="whitespace-pre-wrap text-sm text-foreground">{post.caption}</p>
             ) : (
