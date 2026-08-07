@@ -130,15 +130,24 @@ export async function GET(
   // No watermarking for video, deliberately — there's no per-viewer marking
   // pipeline for it (the visible/invisible marks are both image-pixel
   // operations), so a video is delivered as uploaded to whoever the checks
-  // above already authorized. Redirects to a short-lived signed URL rather
-  // than proxying the bytes through this route: the browser's <video> tag
-  // then does its own HTTP Range requests straight against Storage, which
-  // supports seeking natively — reimplementing Range handling here would
-  // just be a slower version of what Storage already does.
+  // above already authorized. Redirects to a signed URL rather than proxying
+  // the bytes through this route: the browser's <video> tag then does its
+  // own HTTP Range requests straight against Storage, which supports
+  // seeking natively — reimplementing Range handling here would just be a
+  // slower version of what Storage already does.
+  //
+  // The signed URL's TTL used to be 120s — fine for a fast connection, but a
+  // 20-35MB clip on slower mobile data can genuinely take longer than that
+  // just to finish an initial download, let alone survive a pause and
+  // resume. The URL expiring mid-playback showed up as a video that starts
+  // loading and then goes blank/stuck (reported for "Sexy Clip", 2026-08).
+  // 3600s covers realistic viewing + buffering time without weakening
+  // anything: this is still just a short-lived link to a private bucket,
+  // gated the same way (the content token above) either way.
   if (item.content_type === "video") {
     const { data: signed, error: signError } = await admin.storage
       .from("content-raw")
-      .createSignedUrl(item.storage_path, 120);
+      .createSignedUrl(item.storage_path, 3600);
     if (signError || !signed) {
       return NextResponse.json({ error: "storage read failed" }, { status: 500 });
     }
