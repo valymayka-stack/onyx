@@ -23,7 +23,7 @@ export default async function ManageCollectionPage({
 
   const { data: collection } = await supabase
     .from("content_collections")
-    .select("id, title, description, cover_item_id")
+    .select("id, title, description, cover_item_id, is_feed")
     .eq("id", collectionId)
     .eq("creator_id", user!.id)
     .maybeSingle();
@@ -116,6 +116,7 @@ export default async function ManageCollectionPage({
           collectionId={collectionId}
           creatorId={user!.id}
           consentRecordId={consent.id}
+          isFeed={collection.is_feed}
         />
       )}
 

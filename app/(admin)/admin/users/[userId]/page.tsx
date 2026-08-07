@@ -66,6 +66,22 @@ export default async function AdminUserDetailPage({
         .limit(20)
     : { data: null };
 
+  // Only fetched for a currently-suspended account — this is what actually
+  // answers "why," since the list page only ever showed a generic
+  // "suspendida" badge. A manual ban via BanToggleButton never writes here
+  // (it only sets profiles.banned_at directly), so no rows means "an admin
+  // suspended this by hand," not "nothing happened."
+  const { data: banHistoryRows } = profile?.banned_at
+    ? await admin
+        .from("ban_history")
+        .select("action, reason, created_at")
+        .eq("target_type", "user")
+        .eq("target_value", userId)
+        .order("created_at", { ascending: false })
+        .limit(5)
+    : { data: null };
+  const latestAutoBan = banHistoryRows?.find((r) => r.action === "banned") ?? null;
+
   // Reported by the bot right after it tries to DM Onyx credentials/access
   // (see app/api/bot/credential-delivery/route.ts) — the only way to tell
   // "never logged in because the DM never arrived" apart from "never logged
@@ -147,6 +163,19 @@ export default async function AdminUserDetailPage({
             )}
             {profile?.device_type && <Badge variant="outline">{profile.device_type}</Badge>}
           </div>
+          {profile?.banned_at && (
+            <p className="text-muted-foreground">
+              Motivo:{" "}
+              {latestAutoBan ? (
+                <>
+                  <span className="font-mono text-foreground">{latestAutoBan.reason}</span> —
+                  suspendida automáticamente el {formatDateTime(latestAutoBan.created_at)}
+                </>
+              ) : (
+                <>Suspendida manualmente por un administrador el {formatDateTime(profile.banned_at)}.</>
+              )}
+            </p>
+          )}
           <p className="text-muted-foreground">
             Creada el {formatDate(userData.user.created_at)}
           </p>

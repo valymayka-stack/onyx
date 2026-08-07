@@ -30,7 +30,7 @@ export default async function AdminManageCollectionPage({
   const { data: collection } = await supabase
     .from("content_collections")
     .select(
-      "id, title, description, cover_item_id, creator_id, telegram_channel_code, creators(handle)",
+      "id, title, description, cover_item_id, creator_id, telegram_channel_code, is_feed, creators(handle)",
     )
     .eq("id", collectionId)
     .maybeSingle();
@@ -130,6 +130,7 @@ export default async function AdminManageCollectionPage({
           collectionId={collectionId}
           creatorId={collection.creator_id}
           consentRecordId={consent.id}
+          isFeed={collection.is_feed}
         />
       )}
 
@@ -141,6 +142,7 @@ export default async function AdminManageCollectionPage({
         initialDescription={collection.description}
         isAdmin
         initialTelegramChannelCode={collection.telegram_channel_code ?? ""}
+        initialIsFeed={collection.is_feed}
       />
 
       <DeleteAccountButton

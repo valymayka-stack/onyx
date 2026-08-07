@@ -8,6 +8,7 @@ import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -17,17 +18,20 @@ export default function CollectionEditForm({
   initialDescription,
   isAdmin = false,
   initialTelegramChannelCode = "",
+  initialIsFeed = false,
 }: {
   collectionId: string;
   initialTitle: string;
   initialDescription: string | null;
   isAdmin?: boolean;
   initialTelegramChannelCode?: string;
+  initialIsFeed?: boolean;
 }) {
   const router = useRouter();
   const [title, setTitle] = useState(initialTitle);
   const [description, setDescription] = useState(initialDescription ?? "");
   const [telegramChannelCode, setTelegramChannelCode] = useState(initialTelegramChannelCode);
+  const [isFeed, setIsFeed] = useState(initialIsFeed);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -44,7 +48,12 @@ export default function CollectionEditForm({
       .from("content_collections")
       .update(
         isAdmin
-          ? { title, description, telegram_channel_code: telegramChannelCode.trim() || null }
+          ? {
+              title,
+              description,
+              telegram_channel_code: telegramChannelCode.trim() || null,
+              is_feed: isFeed,
+            }
           : { title, description },
       )
       .eq("id", collectionId);
@@ -95,6 +104,17 @@ export default function CollectionEditForm({
                 colección no tiene canal de Telegram equivalente.
               </p>
             </div>
+          )}
+
+          {isAdmin && (
+            <label className="flex items-center gap-2 text-sm">
+              <Checkbox
+                checked={isFeed}
+                onCheckedChange={(checked) => setIsFeed(checked === true)}
+              />
+              Modo feed (estilo Grupo) — se muestra como scroll infinito de posts en vez de
+              carrusel, y permite publicar solo texto.
+            </label>
           )}
 
           {error && (

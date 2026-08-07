@@ -26,10 +26,12 @@ export default function CollectionAddPhotos({
   collectionId,
   creatorId,
   consentRecordId,
+  isFeed = false,
 }: {
   collectionId: string;
   creatorId: string;
   consentRecordId: string;
+  isFeed?: boolean;
 }) {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
@@ -38,9 +40,14 @@ export default function CollectionAddPhotos({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // In feed mode a post can be text-only, so "nothing to submit" means no
+  // files AND no caption — classic collections keep requiring a file.
+  const textOnlyPost = isFeed && files.length === 0;
+  const canSubmit = isFeed ? files.length > 0 || caption.trim().length > 0 : files.length > 0;
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (files.length === 0) return;
+    if (!canSubmit) return;
 
     const oversized = files.find((f) => f.size > MAX_UPLOAD_BYTES);
     if (oversized) {
@@ -62,27 +69,49 @@ export default function CollectionAddPhotos({
       return;
     }
 
-    try {
-      for (const file of files) {
-        const ext = file.name.split(".").pop() || "jpg";
-        const path = `${creatorId}/collections/${collectionId}/${crypto.randomUUID()}.${ext}`;
-        const { error: uploadError } = await supabase.storage
-          .from("content-raw")
-          .upload(path, file, { contentType: file.type });
-        if (uploadError) throw new Error(uploadError.message);
+    // Shared by every row inserted from this submit, so a multi-file batch
+    // (or a text-only post) renders as one post in the feed instead of one
+    // card per file — see components/GroupFeedViewer.tsx.
+    const postGroupId = crypto.randomUUID();
 
+    try {
+      if (textOnlyPost) {
         const { error: insertError } = await supabase.from("content_items").insert({
           creator_id: creatorId,
-          storage_path: path,
-          content_type: isVideoFile(file) ? "video" : "image",
+          storage_path: null,
+          content_type: "text",
           is_premium: true,
           collection_id: collectionId,
           is_cover: false,
           consent_record_id: consentRecordId,
-          caption: caption.trim() || null,
+          caption: caption.trim(),
           publish_at: publishAt ? mexicoCityDateTimeToIso(publishAt) : null,
+          post_group_id: postGroupId,
         });
         if (insertError) throw new Error(insertError.message);
+      } else {
+        for (const file of files) {
+          const ext = file.name.split(".").pop() || "jpg";
+          const path = `${creatorId}/collections/${collectionId}/${crypto.randomUUID()}.${ext}`;
+          const { error: uploadError } = await supabase.storage
+            .from("content-raw")
+            .upload(path, file, { contentType: file.type });
+          if (uploadError) throw new Error(uploadError.message);
+
+          const { error: insertError } = await supabase.from("content_items").insert({
+            creator_id: creatorId,
+            storage_path: path,
+            content_type: isVideoFile(file) ? "video" : "image",
+            is_premium: true,
+            collection_id: collectionId,
+            is_cover: false,
+            consent_record_id: consentRecordId,
+            caption: caption.trim() || null,
+            publish_at: publishAt ? mexicoCityDateTimeToIso(publishAt) : null,
+            post_group_id: postGroupId,
+          });
+          if (insertError) throw new Error(insertError.message);
+        }
       }
     } catch (err) {
       setLoading(false);
@@ -100,27 +129,31 @@ export default function CollectionAddPhotos({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-base">Añadir fotos</CardTitle>
+        <CardTitle className="text-base">{isFeed ? "Nuevo post" : "Añadir fotos"}</CardTitle>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="add-photos">Archivos</Label>
+            <Label htmlFor="add-photos">{isFeed ? "Archivos (opcional)" : "Archivos"}</Label>
             <Input
               id="add-photos"
               type="file"
               accept="image/*,video/*"
               multiple
-              required
+              required={!isFeed}
               onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
             />
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="add-photos-caption">Texto (opcional)</Label>
+            <Label htmlFor="add-photos-caption">{isFeed ? "Texto" : "Texto (opcional)"}</Label>
             <Textarea
               id="add-photos-caption"
-              placeholder="Se muestra junto a las fotos, como el pie de foto de un post."
+              placeholder={
+                isFeed
+                  ? "Escribe el post. Puedes dejarlo solo con texto, sin foto."
+                  : "Se muestra junto a las fotos, como el pie de foto de un post."
+              }
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
             />
@@ -146,9 +179,9 @@ export default function CollectionAddPhotos({
             </Alert>
           )}
 
-          <Button type="submit" disabled={loading || files.length === 0}>
+          <Button type="submit" disabled={loading || !canSubmit}>
             <Upload data-icon="inline-start" />
-            {loading ? "Subiendo…" : "Añadir a la colección"}
+            {loading ? "Publicando…" : isFeed ? "Publicar" : "Añadir a la colección"}
           </Button>
         </form>
       </CardContent>

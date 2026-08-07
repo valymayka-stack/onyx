@@ -31,17 +31,31 @@ export interface UserRow {
 // The telegram id is the email's local part (`<telegramId>@onyx.com`, see
 // provisionFan.ts), so filtering by email doubles as filtering by telegram
 // id with no separate field needed.
+type StatusFilter = "all" | "active" | "suspended";
+
+const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "Todas" },
+  { value: "active", label: "Activas" },
+  { value: "suspended", label: "Suspendidas" },
+];
+
 export default function UsersTable({ rows }: { rows: UserRow[] }) {
   const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<StatusFilter>("all");
 
   const normalized = query.trim().toLowerCase();
-  const filtered = normalized
-    ? rows.filter(
-        (row) =>
-          row.email.toLowerCase().includes(normalized) ||
-          row.displayName.toLowerCase().includes(normalized),
-      )
-    : rows;
+  const filtered = rows
+    .filter((row) => {
+      if (status === "active") return !row.bannedAt;
+      if (status === "suspended") return !!row.bannedAt;
+      return true;
+    })
+    .filter(
+      (row) =>
+        !normalized ||
+        row.email.toLowerCase().includes(normalized) ||
+        row.displayName.toLowerCase().includes(normalized),
+    );
 
   return (
     <div className="flex flex-col gap-3">
@@ -53,6 +67,23 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
           onChange={(e) => setQuery(e.target.value)}
           className="pl-8"
         />
+      </div>
+
+      <div className="flex gap-2">
+        {STATUS_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            type="button"
+            onClick={() => setStatus(f.value)}
+            className={`rounded-lg border px-3 py-1.5 text-sm transition-colors ${
+              status === f.value
+                ? "border-primary/40 bg-primary/10 text-primary"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
       </div>
 
       <Table>
@@ -110,7 +141,7 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
           {filtered.length === 0 && (
             <TableRow>
               <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
-                Sin resultados para &ldquo;{query}&rdquo;.
+                {query ? <>Sin resultados para &ldquo;{query}&rdquo;.</> : "Sin resultados."}
               </TableCell>
             </TableRow>
           )}
