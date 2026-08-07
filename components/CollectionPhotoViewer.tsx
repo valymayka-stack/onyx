@@ -10,6 +10,7 @@ interface PhotoItem {
   url: string;
   isCover: boolean;
   contentType: "image" | "video";
+  caption?: string;
 }
 
 export default function CollectionPhotoViewer({
@@ -88,6 +89,10 @@ export default function CollectionPhotoViewer({
           </>
         )}
       </div>
+
+      {current.caption && (
+        <p className="whitespace-pre-wrap text-sm text-foreground">{current.caption}</p>
+      )}
 
       {items.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-1">

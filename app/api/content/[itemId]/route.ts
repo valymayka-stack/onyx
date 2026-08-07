@@ -58,7 +58,9 @@ export async function GET(
 
   const { data: item, error: itemError } = await admin
     .from("content_items")
-    .select("id, creator_id, storage_path, content_type, is_hidden, collection_id, is_cover")
+    .select(
+      "id, creator_id, storage_path, content_type, is_hidden, collection_id, is_cover, publish_at",
+    )
     .eq("id", itemId)
     .maybeSingle();
 
@@ -84,11 +86,12 @@ export async function GET(
     // full — there's no separate purchase/unlock step.
     const { data: grant } = await admin
       .from("collection_access_grants")
-      .select("id")
+      .select("id, expires_at")
       .eq("collection_id", item.collection_id)
       .eq("fan_id", user.id)
       .maybeSingle();
-    if (!grant) {
+    const grantExpired = !!grant?.expires_at && new Date(grant.expires_at) <= new Date();
+    if (!grant || grantExpired) {
       return NextResponse.json({ error: "not found" }, { status: 404 });
     }
   }
@@ -114,6 +117,13 @@ export async function GET(
   // "hidden by moderation" from "never existed." The owning creator/admin
   // can still preview it (e.g. to check what was flagged).
   if (item.is_hidden && !isAdmin && !isOwnerCreator) {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+
+  // Scheduled-but-not-yet-published content: same 404-not-403 treatment —
+  // the feed already filters these out, this is defense in depth against a
+  // fan who somehow got a signed token to an item before its publish_at.
+  if (item.publish_at && new Date(item.publish_at) > new Date() && !isAdmin && !isOwnerCreator) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 

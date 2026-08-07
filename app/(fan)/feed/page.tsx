@@ -29,9 +29,17 @@ export default async function FeedPage() {
 
   const { data: myGrants } = await admin
     .from("collection_access_grants")
-    .select("collection_id")
+    .select("collection_id, expires_at")
     .eq("fan_id", user!.id);
   const allowedCollectionIds = (myGrants ?? []).map((g) => g.collection_id);
+  const expiresAtByCollectionId = new Map(
+    (myGrants ?? []).map((g) => [g.collection_id, g.expires_at as string | null]),
+  );
+  const now = new Date();
+  const isExpired = (collectionId: string) => {
+    const expiresAt = expiresAtByCollectionId.get(collectionId);
+    return !!expiresAt && new Date(expiresAt) <= now;
+  };
 
   const collections =
     allowedCollectionIds.length > 0
@@ -45,15 +53,21 @@ export default async function FeedPage() {
         ).data ?? []
       : [];
 
-  const collectionIds = collections.map((c) => c.id);
+  // Items are only fetched for collections the fan can still actually see —
+  // an expired collection renders a renew prompt instead, so there's no
+  // reason to pull its items or mint signed content tokens for it.
+  const activeCollectionIds = collections.filter((c) => !isExpired(c.id)).map((c) => c.id);
   const { data: collectionItems } =
-    collectionIds.length > 0
+    activeCollectionIds.length > 0
       ? await admin
           .from("content_items")
-          .select("id, collection_id, is_cover, content_type")
-          .in("collection_id", collectionIds)
+          .select("id, collection_id, is_cover, content_type, caption, publish_at")
+          .in("collection_id", activeCollectionIds)
           .order("is_cover", { ascending: false })
       : { data: [] };
+  const visibleItems = (collectionItems ?? []).filter(
+    (i) => !i.publish_at || new Date(i.publish_at) <= now,
+  );
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-8">
@@ -72,14 +86,27 @@ export default async function FeedPage() {
                 ? (collection.creators as unknown as { handle: string }[])[0]
                 : (collection.creators as unknown as { handle: string } | null);
 
-              const collectionItemsList = (collectionItems ?? [])
-                .filter((i) => i.collection_id === collection.id)
-                .map((item) => ({
-                  id: item.id,
-                  isCover: item.is_cover,
-                  contentType: (item.content_type === "video" ? "video" : "image") as "image" | "video",
-                  url: `/api/content/${item.id}?t=${issueContentToken(item.id, user!.id)}`,
-                }));
+              const expired = isExpired(collection.id);
+
+              const collectionItemsList = expired
+                ? []
+                : visibleItems
+                    .filter((i) => i.collection_id === collection.id)
+                    .map((item) => ({
+                      id: item.id,
+                      isCover: item.is_cover,
+                      contentType: (item.content_type === "video" ? "video" : "image") as
+                        | "image"
+                        | "video",
+                      caption: item.caption ?? undefined,
+                      url: `/api/content/${item.id}?t=${issueContentToken(item.id, user!.id)}`,
+                    }));
+
+              // Nothing published yet for an active collection — same as not
+              // having it at all, don't render an empty card. An expired
+              // collection always renders (with the renew prompt below), even
+              // though its item list here is intentionally empty.
+              if (!expired && collectionItemsList.length === 0) return null;
 
               return (
                 <CollectionConsentGate key={collection.id} collectionId={collection.id}>
@@ -99,7 +126,14 @@ export default async function FeedPage() {
                         )}
                       </div>
 
-                      <CollectionPhotoViewer items={collectionItemsList} />
+                      {expired ? (
+                        <p className="rounded-lg border border-border/60 bg-muted/40 px-4 py-6 text-center text-sm text-muted-foreground">
+                          Tu acceso venció — renueva tu suscripción para seguir disfrutando este
+                          contenido.
+                        </p>
+                      ) : (
+                        <CollectionPhotoViewer items={collectionItemsList} />
+                      )}
                     </CardContent>
                   </Card>
                 </CollectionConsentGate>

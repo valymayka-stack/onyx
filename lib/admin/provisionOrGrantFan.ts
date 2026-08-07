@@ -94,13 +94,17 @@ export async function provisionOrGrantFan({
   let grantedCollection: { id: string; title: string } | null = null;
   if (collection) {
     // collection_access_grants has a unique (collection_id, fan_id)
-    // constraint (0008_collections.sql) — upsert + ignoreDuplicates makes a
-    // repeat purchase of the same collection a no-op instead of an error.
+    // constraint (0008_collections.sql) — upsert makes a repeat purchase of
+    // the same collection a no-op instead of an error. Explicitly resetting
+    // expires_at to null on conflict (rather than ignoreDuplicates) matters
+    // for expiring channels: this same call fires on every renewal via
+    // notify_onyx_provision, so a fan who renews after their grant expired
+    // gets access back automatically, without a separate "un-expire" path.
     const { error: grantError } = await admin
       .from("collection_access_grants")
       .upsert(
-        { collection_id: collection.id, fan_id: userId },
-        { onConflict: "collection_id,fan_id", ignoreDuplicates: true },
+        { collection_id: collection.id, fan_id: userId, expires_at: null },
+        { onConflict: "collection_id,fan_id" },
       );
 
     if (grantError) {

@@ -8,6 +8,7 @@ import { MAX_UPLOAD_BYTES, oversizedFileMessage, isVideoFile } from "@/lib/uploa
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -20,6 +21,8 @@ export default function CollectionAddPhotos({
 }) {
   const router = useRouter();
   const [files, setFiles] = useState<File[]>([]);
+  const [caption, setCaption] = useState("");
+  const [publishAt, setPublishAt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -64,6 +67,8 @@ export default function CollectionAddPhotos({
           collection_id: collectionId,
           is_cover: false,
           consent_record_id: consentRecordId,
+          caption: caption.trim() || null,
+          publish_at: publishAt ? new Date(publishAt).toISOString() : null,
         });
         if (insertError) throw new Error(insertError.message);
       }
@@ -75,6 +80,8 @@ export default function CollectionAddPhotos({
 
     setLoading(false);
     setFiles([]);
+    setCaption("");
+    setPublishAt("");
     router.refresh();
   }
 
@@ -95,6 +102,29 @@ export default function CollectionAddPhotos({
               required
               onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
             />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="add-photos-caption">Texto (opcional)</Label>
+            <Textarea
+              id="add-photos-caption"
+              placeholder="Se muestra junto a las fotos, como el pie de foto de un post."
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="add-photos-publish-at">Publicar el (opcional)</Label>
+            <Input
+              id="add-photos-publish-at"
+              type="datetime-local"
+              value={publishAt}
+              onChange={(e) => setPublishAt(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Vacío = visible de inmediato. Con fecha, no aparece en el feed del fan hasta ese momento.
+            </p>
           </div>
 
           {error && (
