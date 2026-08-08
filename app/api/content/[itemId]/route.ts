@@ -46,15 +46,24 @@ export async function GET(
 
   const admin = createAdminClient();
 
-  const attemptCount = await countRecentAttempts(admin, {
-    userId: user.id,
-    actionType: "content_request",
-    windowMinutes: 1,
-  });
-  if (attemptCount >= CONTENT_REQUEST_LIMIT_PER_MINUTE) {
-    return NextResponse.json({ error: "rate limited" }, { status: 429 });
+  // A Range header only ever shows up on a seek/buffer continuation of a
+  // video already being played (see the proxying below) — the initial
+  // request for any item, video included, never sends one. Exempting these
+  // from the "new content request" counter keeps normal seeking/scrubbing
+  // from burning through the same 60/min budget meant for someone fetching
+  // many *different* items.
+  const isRangeContinuation = request.headers.get("range") !== null;
+  if (!isRangeContinuation) {
+    const attemptCount = await countRecentAttempts(admin, {
+      userId: user.id,
+      actionType: "content_request",
+      windowMinutes: 1,
+    });
+    if (attemptCount >= CONTENT_REQUEST_LIMIT_PER_MINUTE) {
+      return NextResponse.json({ error: "rate limited" }, { status: 429 });
+    }
+    await logAttempt(admin, { userId: user.id, ip, actionType: "content_request" });
   }
-  await logAttempt(admin, { userId: user.id, ip, actionType: "content_request" });
 
   const { data: item, error: itemError } = await admin
     .from("content_items")
@@ -130,20 +139,19 @@ export async function GET(
   // No watermarking for video, deliberately — there's no per-viewer marking
   // pipeline for it (the visible/invisible marks are both image-pixel
   // operations), so a video is delivered as uploaded to whoever the checks
-  // above already authorized. Redirects to a signed URL rather than proxying
-  // the bytes through this route: the browser's <video> tag then does its
-  // own HTTP Range requests straight against Storage, which supports
-  // seeking natively — reimplementing Range handling here would just be a
-  // slower version of what Storage already does.
+  // above already authorized.
   //
-  // The signed URL's TTL used to be 120s — fine for a fast connection, but a
-  // 20-35MB clip on slower mobile data can genuinely take longer than that
-  // just to finish an initial download, let alone survive a pause and
-  // resume. The URL expiring mid-playback showed up as a video that starts
-  // loading and then goes blank/stuck (reported for "Sexy Clip", 2026-08).
-  // 3600s covers realistic viewing + buffering time without weakening
-  // anything: this is still just a short-lived link to a private bucket,
-  // gated the same way (the content token above) either way.
+  // This used to redirect the browser straight to a signed Storage URL
+  // instead of proxying the bytes — cheaper, and lets the <video> tag do its
+  // own Range requests against Storage directly. Extending that URL's TTL
+  // from 120s to 3600s (2026-08, see git history) fixed it for some cases,
+  // but fans on Android kept reporting videos going gray/stuck even after
+  // that — Android WebView's video pipeline (backed by ExoPlayer, not a
+  // plain browser tab) is known to handle a 307-redirected, token-signed
+  // video src unreliably. Proxying here removes the redirect entirely: the
+  // <video src> always points at this same-origin route, and Range requests
+  // (verified Storage honors them correctly — 206 + Content-Range) are
+  // forwarded through rather than the client ever seeing the Storage URL.
   if (item.content_type === "video") {
     const { data: signed, error: signError } = await admin.storage
       .from("content-raw")
@@ -151,7 +159,29 @@ export async function GET(
     if (signError || !signed) {
       return NextResponse.json({ error: "storage read failed" }, { status: 500 });
     }
-    return NextResponse.redirect(signed.signedUrl);
+
+    const range = request.headers.get("range");
+    let upstream: Response;
+    try {
+      upstream = await fetch(signed.signedUrl, range ? { headers: { Range: range } } : undefined);
+    } catch {
+      return NextResponse.json({ error: "storage read failed" }, { status: 502 });
+    }
+
+    if (!upstream.ok || !upstream.body) {
+      return NextResponse.json({ error: "storage read failed" }, { status: 502 });
+    }
+
+    const responseHeaders = new Headers();
+    responseHeaders.set("Content-Type", upstream.headers.get("content-type") ?? "video/mp4");
+    responseHeaders.set("Accept-Ranges", "bytes");
+    responseHeaders.set("Cache-Control", "private, no-store");
+    const contentLength = upstream.headers.get("content-length");
+    if (contentLength) responseHeaders.set("Content-Length", contentLength);
+    const contentRange = upstream.headers.get("content-range");
+    if (contentRange) responseHeaders.set("Content-Range", contentRange);
+
+    return new NextResponse(upstream.body, { status: upstream.status, headers: responseHeaders });
   }
 
   // Bulk-download logging (2026-08): no longer auto-bans — a fan legitimately
