@@ -1,15 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { randomUUID } from "node:crypto";
-import { writeFile, unlink, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
-import ffmpegPath from "ffmpeg-static";
 import { authorizeCollectionOwner } from "@/lib/studio/authorizeCollection";
 import { MAX_UPLOAD_BYTES } from "@/lib/uploadLimits";
-
-const execFileAsync = promisify(execFile);
+import { transcodeToMp4 } from "@/lib/video/transcodeToMp4";
 
 // Video files upload here instead of straight to Storage from the browser
 // (see CollectionAddPhotos.tsx) — a phone's raw export (.MOV/HEVC and
@@ -34,31 +27,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "file too large" }, { status: 413 });
   }
 
-  const jobId = randomUUID();
-  const inputPath = path.join(tmpdir(), `${jobId}-in`);
-  const outputPath = path.join(tmpdir(), `${jobId}-out.mp4`);
-
   try {
-    await writeFile(inputPath, Buffer.from(await file.arrayBuffer()));
-
-    await execFileAsync(
-      ffmpegPath as string,
-      [
-        "-y",
-        "-i", inputPath,
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-b:a", "128k",
-        "-movflags", "+faststart",
-        outputPath,
-      ],
-      { maxBuffer: 1024 * 1024 * 20 },
-    );
-
-    const outputBuffer = await readFile(outputPath);
+    const outputBuffer = await transcodeToMp4(Buffer.from(await file.arrayBuffer()));
     const storagePath = `${auth.collection.creator_id}/collections/${collectionId}/${randomUUID()}.mp4`;
 
     const { error: uploadError } = await auth.admin.storage
@@ -74,8 +44,5 @@ export async function POST(request: NextRequest) {
       { error: err instanceof Error ? err.message : "no se pudo procesar el video" },
       { status: 500 },
     );
-  } finally {
-    await unlink(inputPath).catch(() => {});
-    await unlink(outputPath).catch(() => {});
   }
 }
