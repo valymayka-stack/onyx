@@ -12,7 +12,11 @@ const contentSecurityPolicy = [
   // wiring here yet, so 'unsafe-inline' is accepted for scripts specifically.
   "script-src 'self' 'unsafe-inline'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
+  // Every gated photo/video is proxied same-origin (/api/content, /api/admin-thumb) —
+  // the one exception is promo_cards' images, which live in the public
+  // "promo-assets" Storage bucket and are loaded straight from Supabase
+  // since there's nothing to gate on a photo meant to be shown to anyone.
+  `img-src 'self' data: blob: ${supabaseUrl}`,
   `connect-src 'self' ${supabaseUrl}`,
   "font-src 'self'",
   // The whole point of the gated content viewer is that it can't be
