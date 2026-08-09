@@ -24,6 +24,7 @@ export default async function AdminOverviewPage() {
     registeredUsers,
     androidUsers,
     iphoneUsers,
+    neverLoggedIn,
   ] = await Promise.all([
     supabase.from("creators").select("*", { count: "exact", head: true }).eq("active", true),
     supabase.from("fans").select("*", { count: "exact", head: true }),
@@ -63,6 +64,10 @@ export default async function AdminOverviewPage() {
       .select("*", { count: "exact", head: true })
       .in("device_type", ["android_app", "android_browser"]),
     supabase.from("profiles").select("*", { count: "exact", head: true }).eq("device_type", "iphone"),
+    // last_login_at is only ever set once a fan's session actually reaches
+    // middleware post-auth (see middleware.ts) — null means the account was
+    // provisioned but that person has never opened the app.
+    supabase.from("profiles").select("*", { count: "exact", head: true }).is("last_login_at", null),
   ]);
 
   const totalRevenueCents =
@@ -105,6 +110,11 @@ export default async function AdminOverviewPage() {
     },
     { label: "Usuarios Android", value: String(androidUsers.count ?? 0), href: "/admin/users" },
     { label: "Usuarios iPhone", value: String(iphoneUsers.count ?? 0), href: "/admin/users" },
+    {
+      label: "Sin iniciar sesión aún",
+      value: String(neverLoggedIn.count ?? 0),
+      href: "/admin/users",
+    },
   ];
 
   return (

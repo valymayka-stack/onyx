@@ -21,6 +21,16 @@ export default async function FeedPage() {
   const admin = createAdminClient();
   const { posts, nextCursor, expired } = await getGrupoFeedPage(admin, user!.id, null);
 
+  // Fire-and-forget: clears the "new post" dot in FanNav next time it
+  // checks. Not awaited — nothing on this page depends on it completing.
+  admin
+    .from("profiles")
+    .update({ grupo_last_seen_at: new Date().toISOString() })
+    .eq("id", user!.id)
+    .then(({ error }) => {
+      if (error) console.error("Failed to update grupo_last_seen_at", error);
+    });
+
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-8">
       <FanNav />

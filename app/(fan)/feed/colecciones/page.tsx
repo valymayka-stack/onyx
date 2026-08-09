@@ -23,6 +23,16 @@ export default async function ColeccionesPage() {
   // service-role client, same as the old per-creator page did.
   const admin = createAdminClient();
 
+  // Fire-and-forget: clears the "new collection" dot in FanNav next time it
+  // checks. Not awaited — nothing on this page depends on it completing.
+  admin
+    .from("profiles")
+    .update({ collections_last_seen_at: new Date().toISOString() })
+    .eq("id", user!.id)
+    .then(({ error }) => {
+      if (error) console.error("Failed to update collections_last_seen_at", error);
+    });
+
   const { data: myGrants } = await admin
     .from("collection_access_grants")
     .select("collection_id, expires_at")
