@@ -21,6 +21,9 @@ export default async function AdminOverviewPage() {
     recentEvents,
     approvedPayments,
     approvedCollectionPurchases,
+    registeredUsers,
+    androidUsers,
+    iphoneUsers,
   ] = await Promise.all([
     supabase.from("creators").select("*", { count: "exact", head: true }).eq("active", true),
     supabase.from("fans").select("*", { count: "exact", head: true }),
@@ -51,6 +54,15 @@ export default async function AdminOverviewPage() {
       .gte("created_at", since24h),
     supabase.from("payments").select("amount_cents").eq("status", "approved"),
     supabase.from("collection_purchases").select("amount_cents").eq("status", "approved"),
+    // device_type is only ever written for fans (middleware skips /admin and
+    // /studio when updating it), so these three naturally reflect fan
+    // accounts without needing a role join.
+    supabase.from("profiles").select("*", { count: "exact", head: true }),
+    supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .in("device_type", ["android_app", "android_browser"]),
+    supabase.from("profiles").select("*", { count: "exact", head: true }).eq("device_type", "iphone"),
   ]);
 
   const totalRevenueCents =
@@ -86,6 +98,13 @@ export default async function AdminOverviewPage() {
       value: String(recentEvents.count ?? 0),
       href: "/admin/security",
     },
+    {
+      label: "Usuarios registrados",
+      value: String(registeredUsers.count ?? 0),
+      href: "/admin/users",
+    },
+    { label: "Usuarios Android", value: String(androidUsers.count ?? 0), href: "/admin/users" },
+    { label: "Usuarios iPhone", value: String(iphoneUsers.count ?? 0), href: "/admin/users" },
   ];
 
   return (
