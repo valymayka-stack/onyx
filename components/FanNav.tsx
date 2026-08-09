@@ -14,6 +14,7 @@ const LINKS = [
   { href: "/feed", label: "Inicio" },
   { href: "/feed", label: "Grupo" },
   { href: "/feed/colecciones", label: "Colecciones" },
+  { href: "/feed/explora", label: "Explora más" },
 ];
 
 export default function FanNav() {

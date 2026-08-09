@@ -13,6 +13,7 @@ const LINKS = [
   { href: "/admin/creators/new", label: "Crear creadora" },
   { href: "/admin/collections", label: "Colecciones" },
   { href: "/admin/content", label: "Contenido" },
+  { href: "/admin/promo", label: "Explora más" },
   { href: "/admin/leaks", label: "Fugas" },
   { href: "/admin/watermark-check", label: "Verificar marca" },
   { href: "/admin/access", label: "Accesos" },
