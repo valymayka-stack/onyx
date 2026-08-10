@@ -10,7 +10,7 @@ import { generateCode, embedInvisibleCode } from "@/lib/watermark/invisible";
 import { getRequestIp } from "@/lib/security/requestIp";
 import { countDistinctItemsRecent, DISTINCT_ITEM_LOG_THRESHOLD } from "@/lib/security/bulkDownloadDetector";
 
-const CONTENT_REQUEST_LIMIT_PER_MINUTE = 60;
+const CONTENT_REQUEST_LIMIT_PER_MINUTE = 150;
 
 export async function GET(
   request: NextRequest,
