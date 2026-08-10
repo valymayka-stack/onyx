@@ -15,7 +15,7 @@ export default async function AdminPromoPage() {
 
   const { data: cards } = await supabase
     .from("promo_cards")
-    .select("id, photo_path, title, description, link_url, is_active, sort_order")
+    .select("id, photo_path, title, description, link_url, is_active, sort_order, views")
     .order("sort_order", { ascending: true });
 
   const nextSortOrder = (cards ?? []).reduce((max, c) => Math.max(max, c.sort_order), 0) + 1;
@@ -49,6 +49,7 @@ export default async function AdminPromoPage() {
                       {!card.is_active && <Badge variant="outline">oculta</Badge>}
                     </div>
                     <p className="truncate text-xs text-muted-foreground">{card.link_url}</p>
+                    <p className="text-xs text-muted-foreground">{card.views} vista(s)</p>
                   </div>
                   <PromoCardActions
                     id={card.id}

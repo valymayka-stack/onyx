@@ -19,6 +19,14 @@ export default async function ExploraPage() {
     .eq("is_active", true)
     .order("sort_order", { ascending: true });
 
+  // Fire-and-forget, one atomic increment per card actually shown on this
+  // load — not awaited, nothing on this page depends on it completing.
+  for (const card of cards ?? []) {
+    admin.rpc("increment_promo_card_views", { p_card_id: card.id }).then(({ error }) => {
+      if (error) console.error("Failed to increment promo card views", error);
+    });
+  }
+
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-8">
       <FanNav />
