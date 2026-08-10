@@ -30,7 +30,7 @@ export default async function AdminUsersPage() {
 
   const admin = createAdminClient();
 
-  const [{ data: userList }, { data: roles }, { data: profiles }, { data: activeSubs }] =
+  const [{ data: userList }, { data: roles }, { data: profiles }, { data: activeSubs }, { data: creators }, { data: grants }] =
     await Promise.all([
       admin.auth.admin.listUsers({ perPage: 1000 }),
       admin.from("user_roles").select("user_id, role"),
@@ -40,6 +40,13 @@ export default async function AdminUsersPage() {
         .select("fan_id")
         .eq("status", "active")
         .gt("ends_at", new Date().toISOString()),
+      admin.from("creators").select("id, handle").order("handle", { ascending: true }),
+      // Which creator(s) each fan has a collection grant under — the only
+      // way to tell "this is a Chivis fan" from "this is a Carman fan"
+      // apart, since fans themselves carry no creator column of their own.
+      admin
+        .from("collection_access_grants")
+        .select("fan_id, content_collections(creator_id)"),
     ]);
 
   const rolesByUser = new Map<string, string[]>();
@@ -52,6 +59,19 @@ export default async function AdminUsersPage() {
   const profileByUser = new Map((profiles ?? []).map((p) => [p.id, p]));
   const fansWithActiveSub = new Set((activeSubs ?? []).map((s) => s.fan_id));
 
+  const creatorIdsByFan = new Map<string, Set<string>>();
+  for (const g of grants ?? []) {
+    const collection = g.content_collections as unknown as
+      | { creator_id: string }[]
+      | { creator_id: string }
+      | null;
+    const creatorId = (collection instanceof Array ? collection[0] : collection)?.creator_id;
+    if (!creatorId) continue;
+    const set = creatorIdsByFan.get(g.fan_id) ?? new Set<string>();
+    set.add(creatorId);
+    creatorIdsByFan.set(g.fan_id, set);
+  }
+
   const rows = (userList?.users ?? [])
     .map((u) => ({
       id: u.id,
@@ -61,6 +81,7 @@ export default async function AdminUsersPage() {
       displayName: profileByUser.get(u.id)?.display_name ?? "—",
       bannedAt: profileByUser.get(u.id)?.banned_at ?? null,
       hasActiveSub: fansWithActiveSub.has(u.id),
+      creatorIds: Array.from(creatorIdsByFan.get(u.id) ?? []),
     }))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
@@ -71,7 +92,7 @@ export default async function AdminUsersPage() {
 
       <Card>
         <CardContent className="px-0">
-          <UsersTable rows={rows} />
+          <UsersTable rows={rows} creators={creators ?? []} />
         </CardContent>
       </Card>
     </main>

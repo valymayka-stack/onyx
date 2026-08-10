@@ -24,6 +24,12 @@ export interface UserRow {
   displayName: string;
   bannedAt: string | null;
   hasActiveSub: boolean;
+  creatorIds: string[];
+}
+
+export interface CreatorOption {
+  id: string;
+  handle: string;
 }
 
 // Client-side filter over an already-fetched list (this page caps at 1000
@@ -39,9 +45,10 @@ const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [
   { value: "suspended", label: "Suspendidas" },
 ];
 
-export default function UsersTable({ rows }: { rows: UserRow[] }) {
+export default function UsersTable({ rows, creators }: { rows: UserRow[]; creators: CreatorOption[] }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<StatusFilter>("all");
+  const [creatorId, setCreatorId] = useState<string>("all");
 
   const normalized = query.trim().toLowerCase();
   const filtered = rows
@@ -49,6 +56,14 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
       if (status === "active") return !row.bannedAt;
       if (status === "suspended") return !!row.bannedAt;
       return true;
+    })
+    // Only fans carry a creator scope — admin/creator accounts always stay
+    // visible regardless of which creator is selected, since there's no
+    // "mixed up with the wrong business" risk for those, and hiding the
+    // one admin account when filtering would just be confusing.
+    .filter((row) => {
+      if (creatorId === "all" || !row.roles.includes("fan")) return true;
+      return row.creatorIds.includes(creatorId);
     })
     .filter(
       (row) =>
@@ -69,7 +84,7 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
         />
       </div>
 
-      <div className="flex gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {STATUS_FILTERS.map((f) => (
           <button
             key={f.value}
@@ -84,6 +99,20 @@ export default function UsersTable({ rows }: { rows: UserRow[] }) {
             {f.label}
           </button>
         ))}
+        {creators.length > 0 && (
+          <select
+            value={creatorId}
+            onChange={(e) => setCreatorId(e.target.value)}
+            className="rounded-lg border border-border bg-background px-3 py-1.5 text-sm text-muted-foreground"
+          >
+            <option value="all">Todas las creadoras</option>
+            {creators.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.handle}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
 
       <Table>
