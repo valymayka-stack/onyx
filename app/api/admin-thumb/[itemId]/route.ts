@@ -53,9 +53,13 @@ export async function GET(
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
-  if (item.content_type === "video") {
+  if (item.content_type !== "image") {
+    // Video preview isn't implemented here, and a text post has no
+    // storage_path at all — .storage.download(null) below would throw
+    // rather than 404/501 cleanly, which is what was rendering as a
+    // broken-image icon in the admin/studio thumbnail grids.
     return NextResponse.json(
-      { error: "video preview not implemented" },
+      { error: `${item.content_type} preview not implemented` },
       { status: 501 },
     );
   }

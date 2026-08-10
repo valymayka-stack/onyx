@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { VideoOff } from "lucide-react";
+import { VideoOff, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import AppHeader from "@/components/AppHeader";
@@ -84,6 +84,10 @@ export default async function ManageCollectionPage({
                   {item.content_type === "video" ? (
                     <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-muted text-muted-foreground">
                       <VideoOff className="size-5" />
+                    </div>
+                  ) : item.content_type === "text" ? (
+                    <div className="flex aspect-square w-full items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                      <FileText className="size-5" />
                     </div>
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
