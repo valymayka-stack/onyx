@@ -45,6 +45,24 @@ function isIphoneBrowser(userAgent: string): boolean {
   return /iPhone/i.test(userAgent);
 }
 
+// Sec-CH-UA-Mobile (Chromium only — Firefox/Safari never send it) reflects
+// the browser engine's own notion of "is this a mobile session", set
+// independently of the User-Agent string a script can freely rewrite. Most
+// UA-spoofing tools (browser extensions, a one-line fetch override) only
+// touch navigator.userAgent/the UA header and never think to also rewrite
+// this one, so a UA claiming "iPhone" while this header says "?0" is a solid
+// tell that only the UA was faked. Not a full defense — Chrome DevTools'
+// own device-emulation mode sets both consistently — but it closes off the
+// far more common, low-effort spoofing path for free. Returns null when the
+// header is absent (non-Chromium browser, or Chromium too old to send it),
+// meaning "no opinion" rather than "not mobile" — callers must not treat
+// that the same as an explicit "?0".
+function mobileClientHint(request: NextRequest): boolean | null {
+  const header = request.headers.get("sec-ch-ua-mobile");
+  if (header === null) return null;
+  return header === "?1";
+}
+
 // Leaks disproportionately come from people who can screen-record or
 // screenshot with a keyboard shortcut and no OS-level friction — a desktop
 // browser gives an attacker that for free, on top of drag-and-drop and
@@ -55,8 +73,13 @@ function isIphoneBrowser(userAgent: string): boolean {
 // since iOS 13 (so desktop-tier sites render correctly) — there is no
 // server-side signal that tells a real iPad apart from a real Mac, so a fan
 // using an iPad gets blocked here too. Accepted trade-off for now.
-function isDesktopBrowser(userAgent: string): boolean {
-  return !/Mobi|Android|iPhone|iPad|iPod/i.test(userAgent);
+function isDesktopBrowser(userAgent: string, mobileHint: boolean | null): boolean {
+  const uaSaysDesktop = !/Mobi|Android|iPhone|iPad|iPod/i.test(userAgent);
+  // A UA claiming mobile but a Client Hint explicitly disagreeing is treated
+  // as desktop — see mobileClientHint's comment for why this direction is
+  // the one worth trusting the hint over the UA for.
+  if (!uaSaysDesktop && mobileHint === false) return true;
+  return uaSaysDesktop;
 }
 
 // Purely informational (see 0011_telegram_bridge_prep.sql) — reuses the same
@@ -64,12 +87,12 @@ function isDesktopBrowser(userAgent: string): boolean {
 // can't silently drift from what actually gates a request.
 type DeviceType = "android_app" | "android_browser" | "iphone" | "desktop" | "other_mobile";
 
-function detectDeviceType(userAgent: string): DeviceType {
+function detectDeviceType(userAgent: string, mobileHint: boolean | null): DeviceType {
   if (/Android/i.test(userAgent)) {
     return userAgent.includes(ANDROID_APP_MARKER) ? "android_app" : "android_browser";
   }
   if (isIphoneBrowser(userAgent)) return "iphone";
-  if (isDesktopBrowser(userAgent)) return "desktop";
+  if (isDesktopBrowser(userAgent, mobileHint)) return "desktop";
   return "other_mobile";
 }
 
@@ -113,6 +136,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const userAgent = request.headers.get("user-agent") ?? "";
+  const mobileHint = mobileClientHint(request);
 
   // Roles are needed below (login-history gating) before they're needed
   // again further down for the MFA check — computed once, reused for both.
@@ -129,7 +153,7 @@ export async function middleware(request: NextRequest) {
   // so nothing downstream should wait on it. Skipped for /admin and /studio
   // since this is about tracking fan platforms, not staff devices.
   if (!path.startsWith("/admin") && !path.startsWith("/studio")) {
-    const detectedDevice = detectDeviceType(userAgent);
+    const detectedDevice = detectDeviceType(userAgent, mobileHint);
     if (profile && profile.device_type !== detectedDevice) {
       supabase
         .from("profiles")
@@ -299,7 +323,7 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL(IPHONE_GATE_PATH, request.url));
   }
 
-  if (!isPlatformPath && isDesktopBrowser(userAgent)) {
+  if (!isPlatformPath && isDesktopBrowser(userAgent, mobileHint)) {
     return NextResponse.redirect(new URL(MOBILE_GATE_PATH, request.url));
   }
 
