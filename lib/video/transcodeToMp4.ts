@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-// Installed via nixpacks.toml (aptPkgs = ["ffmpeg"]) rather than the
+// Installed via railpack.json (deploy.aptPackages) rather than the
 // ffmpeg-static npm package — that package downloads a prebuilt binary via
 // a postinstall script, which silently went missing from the deployed
 // container (ENOENT at runtime, no build-time failure to catch it). A real
