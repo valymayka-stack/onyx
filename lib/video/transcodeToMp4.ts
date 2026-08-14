@@ -5,9 +5,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import ffmpegPath from "ffmpeg-static";
 
 const execFileAsync = promisify(execFile);
+
+// Installed via nixpacks.toml (aptPkgs = ["ffmpeg"]) rather than the
+// ffmpeg-static npm package — that package downloads a prebuilt binary via
+// a postinstall script, which silently went missing from the deployed
+// container (ENOENT at runtime, no build-time failure to catch it). A real
+// apt package is part of the image itself, not a postinstall side effect.
+const FFMPEG_PATH = "ffmpeg";
 
 // Shared by /api/studio/upload-video (admin/creator uploads) and
 // /api/bot/mirror-channel-post (Telegram->Onyx mirroring) — one ffmpeg
@@ -23,7 +29,7 @@ export async function transcodeToMp4(input: Buffer): Promise<Buffer> {
     await writeFile(inputPath, input);
 
     await execFileAsync(
-      ffmpegPath as string,
+      FFMPEG_PATH,
       [
         "-y",
         "-i", inputPath,
