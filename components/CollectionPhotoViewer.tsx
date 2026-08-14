@@ -143,6 +143,8 @@ export default function CollectionPhotoViewer({
             key={current.id}
             src={current.url}
             controls
+            controlsList="nodownload noremoteplayback"
+            disablePictureInPicture
             playsInline
             className="max-h-[70vh] w-full object-contain"
             style={{ WebkitTouchCallout: "none" }}
