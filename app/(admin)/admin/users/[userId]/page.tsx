@@ -193,17 +193,18 @@ export default async function AdminUserDetailPage({
             <p className="text-muted-foreground">
               Canal de entrega actual:{" "}
               <Badge variant="outline">{profile?.delivery_channel ?? "sin determinar"}</Badge>
+              {" — "}bloqueado a ese dispositivo; cambiarlo requiere autorización tuya.
               {profile?.device_switch_used_at && (
                 <span className="ml-2">
-                  Cambio de dispositivo usado el {formatDateTime(profile.device_switch_used_at)} — bloqueado hasta que lo autorices.
+                  Último cambio autorizado el {formatDateTime(profile.device_switch_used_at)}.
                 </span>
               )}
             </p>
           )}
           <div className="flex flex-wrap gap-2">
             <BanToggleButton userId={userId} banned={!!profile?.banned_at} />
-            {hasBridgedGrant && profile?.device_switch_used_at && (
-              <ResetDeviceSwitchButton userId={userId} />
+            {hasBridgedGrant && (profile?.delivery_channel === "app" || profile?.delivery_channel === "telegram") && (
+              <ResetDeviceSwitchButton userId={userId} currentChannel={profile.delivery_channel} />
             )}
             {!roles.includes("admin") && (
               <DeleteAccountButton

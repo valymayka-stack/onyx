@@ -3,7 +3,6 @@ import { updateSession } from "@/lib/supabase/middleware";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasRole, getUserRoles } from "@/lib/auth/roles";
 import { getRequestIp } from "@/lib/security/requestIp";
-import { telegramIdFromEmail, revokeTelegramAccess } from "@/lib/security/telegramBridge";
 import { contentChannelForDevice, fanBridgedChannelCodes } from "@/lib/security/deliveryChannel";
 
 const PUBLIC_PREFIXES = ["/login", "/api/"];
@@ -206,31 +205,17 @@ export async function middleware(request: NextRequest) {
 
       if (bridgedCodes.length > 0) {
         if (!profile?.delivery_channel) {
-          // First device ever seen for this fan — establishes the baseline,
-          // doesn't consume the one free switch.
+          // First device ever seen for this fan — establishes the
+          // permanent baseline. Nothing after this point ever moves it
+          // automatically (2026-08: self-service switching removed
+          // entirely — it was too easy to use as a way to spread one
+          // subscription's content across two channels). The only way to
+          // move a fan to a different device from here on is an admin
+          // doing it by hand from /admin/users/[userId], deliberately,
+          // one fan at a time.
           await admin.from("profiles").update({ delivery_channel: newChannel }).eq("id", user.id);
         } else if (newChannel !== profile.delivery_channel) {
-          if (profile.device_switch_used_at) {
-            // Already used their one allowed switch — block instead of
-            // silently letting them reach content on the new channel while
-            // the old one (Telegram membership, or the app's grant) is
-            // still live. An admin has to clear device_switch_used_at
-            // (see /admin/users/[userId]) before another switch is honored.
-            deliveryChannelBlocked = true;
-          } else {
-            const telegramId = telegramIdFromEmail(user.email);
-            if (telegramId && newChannel === "app") {
-              // Moving off Telegram: kick them out and revoke the invite
-              // link before granting the app side. The reverse direction
-              // (app -> telegram) needs no extra step here — landing on
-              // /telegram-access already (re)requests a fresh invite.
-              await revokeTelegramAccess(telegramId, bridgedCodes);
-            }
-            await admin
-              .from("profiles")
-              .update({ delivery_channel: newChannel, device_switch_used_at: new Date().toISOString() })
-              .eq("id", user.id);
-          }
+          deliveryChannelBlocked = true;
         }
       }
     }

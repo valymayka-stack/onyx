@@ -2,34 +2,38 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/browser";
 import { Button } from "@/components/ui/button";
 
-// Clears the one-time device-switch allowance (see
-// 0014_delivery_channel_lock.sql / middleware.ts) so a fan blocked at
-// /device-switch-blocked can move their access to the new device on their
-// next request. Same RLS path as BanToggleButton — profiles_admin_all
-// already grants admin full access, no separate API route needed.
-export default function ResetDeviceSwitchButton({ userId }: { userId: string }) {
+// Manually moves a fan to their other delivery channel (telegram <-> app).
+// This is now the *only* way that ever happens — self-service switching was
+// removed from middleware.ts (2026-08), so this is a deliberate, one-fan-
+// at-a-time admin call, not a flag that lets the fan's own next request
+// auto-detect and switch itself. See app/api/admin/switch-delivery-channel.
+export default function ResetDeviceSwitchButton({
+  userId,
+  currentChannel,
+}: {
+  userId: string;
+  currentChannel: "telegram" | "app";
+}) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const otherChannel = currentChannel === "app" ? "telegram" : "app";
 
-  async function handleReset() {
+  async function handleSwitch() {
     setLoading(true);
-    const supabase = createClient();
-
-    await supabase
-      .from("profiles")
-      .update({ device_switch_used_at: null })
-      .eq("id", userId);
-
+    await fetch("/api/admin/switch-delivery-channel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
+    });
     setLoading(false);
     router.refresh();
   }
 
   return (
-    <Button size="sm" variant="outline" disabled={loading} onClick={handleReset}>
-      Permitir otro cambio de dispositivo
+    <Button size="sm" variant="outline" disabled={loading} onClick={handleSwitch}>
+      Cambiar a {otherChannel === "app" ? "app (Android)" : "Telegram"}
     </Button>
   );
 }
