@@ -23,6 +23,17 @@ const fraunces = Fraunces({
 export const metadata: Metadata = {
   title: "Onyx",
   description: "Private space to connect with your fans",
+  // iOS ignores the web manifest for most of this — these tags are what
+  // actually make "Add to Home Screen" open without Safari's UI chrome and
+  // use the right icon (see app/manifest.ts for the Android/Chrome side).
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Onyx",
+  },
+  icons: {
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({
