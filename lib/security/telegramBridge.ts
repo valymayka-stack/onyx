@@ -45,10 +45,11 @@ export async function resolveCreatorHandlesForFan(
 // TELEGRAM_BOT_BRIDGE_URL_<HANDLE>/_SECRET_<HANDLE> (e.g. `_LORE`). A creator
 // with no scoped vars set gets no notification at all rather than silently
 // falling back to another creator's bot — that fallback is exactly the bug
-// this replaces. `null`/"chivis" keeps using the original unscoped vars, so
+// this replaces. `null`/Chivis's real creators.handle ("chivism", confirmed
+// against the DB — NOT "chivis") keeps using the original unscoped vars, so
 // Chivis's existing setup needs no Railway changes.
 function bridgeConfig(creatorHandle: string | null): { baseUrl: string; secret: string } | null {
-  if (creatorHandle && creatorHandle !== "chivis") {
+  if (creatorHandle && creatorHandle !== "chivism") {
     const suffix = creatorHandle.toUpperCase();
     const baseUrl = process.env[`TELEGRAM_BOT_BRIDGE_URL_${suffix}`];
     const secret = process.env[`TELEGRAM_BOT_BRIDGE_SECRET_${suffix}`];
