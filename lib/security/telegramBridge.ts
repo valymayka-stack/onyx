@@ -85,15 +85,17 @@ export function notifyBotOfBan(telegramId: string, reason: string, creatorHandle
 // before delivery_channel flips to "app", or they'd briefly hold both.
 // Still never throws: a failed revoke shouldn't block the request, since
 // the fan's Onyx-side access is what actually gates viewing from here on.
-// Not creator-scoped yet (still only reaches Chivis's bridge) — the callers
-// here (middleware.ts's device-switch enforcement) don't carry creator
-// context the way the ban path now does. Same gap as before this file's ban
-// routing got fixed; tracked as a known follow-up, not fixed here.
+// creatorHandle: same routing as notifyBotOfBan — confirmed bug (2026-08-21)
+// where a Lore fan's iPhone gate page called this unscoped, hit Chivis's
+// bridge, and told the fan "invite sent" when nothing was ever sent for
+// their actual (Lore) channel. Callers must resolve the fan's creator(s)
+// via resolveCreatorHandlesForFan and call once per creator/code group.
 export async function revokeTelegramAccess(
   telegramId: string,
   channelCodes: string[],
+  creatorHandle: string | null,
 ): Promise<boolean> {
-  const config = bridgeConfig(null);
+  const config = bridgeConfig(creatorHandle);
   if (!config || channelCodes.length === 0) return false;
 
   try {
@@ -112,13 +114,15 @@ export async function revokeTelegramAccess(
 // Awaited (unlike notifyBotOfBan) since the iPhone gate page's copy depends
 // on whether this actually worked — but still never throws; a network
 // error or an unconfigured bridge both just mean "couldn't request it",
-// which the page falls back to a generic holding message for.
-// Same not-yet-creator-scoped caveat as revokeTelegramAccess above.
+// which the page falls back to a generic holding message for. Same
+// creatorHandle routing requirement as revokeTelegramAccess above — this is
+// the one that was actually confirmed broken for a real Lore fan.
 export async function requestTelegramInvites(
   telegramId: string,
   channelCodes: string[],
+  creatorHandle: string | null,
 ): Promise<boolean> {
-  const config = bridgeConfig(null);
+  const config = bridgeConfig(creatorHandle);
   if (!config || channelCodes.length === 0) return false;
 
   try {

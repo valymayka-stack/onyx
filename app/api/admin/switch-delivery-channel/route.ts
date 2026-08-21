@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasRole } from "@/lib/auth/roles";
-import { telegramIdFromEmail, revokeTelegramAccess } from "@/lib/security/telegramBridge";
+import { telegramIdFromEmail, revokeTelegramAccess, resolveCreatorHandlesForFan } from "@/lib/security/telegramBridge";
 import { fanBridgedChannelCodes, type DeliveryChannel } from "@/lib/security/deliveryChannel";
 
 // Backs the (deliberately manual, admin-only) device-switch override —
@@ -60,7 +60,14 @@ export async function POST(request: NextRequest) {
     // just triggered by an admin instead of the fan's own next request.
     const telegramId = telegramIdFromEmail(userData?.user?.email);
     if (telegramId) {
-      await revokeTelegramAccess(telegramId, bridgedCodes);
+      const creatorHandles = await resolveCreatorHandlesForFan(admin, userId);
+      if (creatorHandles.length === 0) {
+        await revokeTelegramAccess(telegramId, bridgedCodes, null);
+      } else {
+        for (const handle of creatorHandles) {
+          await revokeTelegramAccess(telegramId, bridgedCodes, handle);
+        }
+      }
     }
   }
   // app -> telegram needs no extra step here — landing on /telegram-access

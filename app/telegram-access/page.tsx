@@ -49,16 +49,27 @@ export default async function TelegramAccessPage() {
     if (collectionIds.length > 0) {
       const { data: collections } = await admin
         .from("content_collections")
-        .select("telegram_channel_code")
+        .select("telegram_channel_code, creators(handle)")
         .in("id", collectionIds)
         .not("telegram_channel_code", "is", null);
 
-      const channelCodes = (collections ?? [])
-        .map((c) => c.telegram_channel_code)
-        .filter((code): code is string => Boolean(code));
+      // Grouped by creator handle, not just a flat code list — the bridge is
+      // routed per creator (confirmed bug, 2026-08-21: a Lore fan's request
+      // silently hit Chivis's bot instead, which told the fan "invite sent"
+      // for a channel it doesn't have), so each creator's codes have to go
+      // to that creator's own bridge.
+      const codesByCreator = new Map<string, string[]>();
+      for (const c of collections ?? []) {
+        const handle = (c as unknown as { creators: { handle: string } | null }).creators?.handle;
+        const code = c.telegram_channel_code;
+        if (!handle || !code) continue;
+        if (!codesByCreator.has(handle)) codesByCreator.set(handle, []);
+        codesByCreator.get(handle)!.push(code);
+      }
 
-      if (channelCodes.length > 0) {
-        invitesRequested = await requestTelegramInvites(telegramId, channelCodes);
+      for (const [handle, codes] of codesByCreator) {
+        const ok = await requestTelegramInvites(telegramId, codes, handle);
+        if (ok) invitesRequested = true;
       }
     }
   }
