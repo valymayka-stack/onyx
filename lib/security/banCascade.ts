@@ -1,7 +1,7 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { hasRole } from "@/lib/auth/roles";
-import { notifyBotOfBan, telegramIdFromEmail } from "@/lib/security/telegramBridge";
+import { notifyBotOfBan, resolveCreatorHandlesForFan, telegramIdFromEmail } from "@/lib/security/telegramBridge";
 
 interface BanInput {
   userId: string;
@@ -64,10 +64,22 @@ export async function applyBan(
 
   await admin.auth.admin.signOut(userId, "global");
 
-  // Best-effort, non-blocking (see telegramBridge.ts) — no-ops entirely
-  // until the bot side of this bridge exists. When it does, this is what
-  // pulls a banned fan's Telegram channel access, Grupo included.
+  // Best-effort, non-blocking (see telegramBridge.ts) — no-ops entirely for
+  // any creator whose bot bridge isn't configured. When it is, this is what
+  // pulls a banned fan's Telegram channel access, Grupo/VIP included.
   const { data: userData } = await admin.auth.admin.getUserById(userId);
   const telegramId = telegramIdFromEmail(userData?.user?.email);
-  if (telegramId) notifyBotOfBan(telegramId, reason);
+  if (!telegramId) return;
+
+  // The bridge must be routed per creator, never a single hardcoded bot
+  // (that was the bug: every creator's bans notified Chivis's admin chat
+  // and only Chivis's bot ever kicked anyone from Telegram).
+  const creatorHandles = await resolveCreatorHandlesForFan(admin, userId);
+  if (creatorHandles.length === 0) {
+    notifyBotOfBan(telegramId, reason, null);
+  } else {
+    for (const handle of creatorHandles) {
+      notifyBotOfBan(telegramId, reason, handle);
+    }
+  }
 }

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasRole } from "@/lib/auth/roles";
-import { notifyBotOfBan, telegramIdFromEmail } from "@/lib/security/telegramBridge";
+import { notifyBotOfBan, resolveCreatorHandlesForFan, telegramIdFromEmail } from "@/lib/security/telegramBridge";
 
 // Backs BanToggleButton — moved from a direct client-side Supabase update to
 // a server route for exactly one reason: a manual suspend needs to reach
@@ -41,7 +41,15 @@ export async function POST(request: NextRequest) {
     const { data: userData } = await admin.auth.admin.getUserById(userId);
     const telegramId = telegramIdFromEmail(userData?.user?.email);
     if (telegramId) {
-      notifyBotOfBan(telegramId, "Suspendida manualmente por un administrador");
+      const reason = "Suspendida manualmente por un administrador";
+      const creatorHandles = await resolveCreatorHandlesForFan(admin, userId);
+      if (creatorHandles.length === 0) {
+        notifyBotOfBan(telegramId, reason, null);
+      } else {
+        for (const handle of creatorHandles) {
+          notifyBotOfBan(telegramId, reason, handle);
+        }
+      }
     }
   }
 

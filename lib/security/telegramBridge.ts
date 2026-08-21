@@ -1,4 +1,5 @@
 import "server-only";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 const TELEGRAM_ID_FROM_EMAIL = /^(\d{4,15})@onyx\.com$/i;
 
@@ -10,11 +11,50 @@ export function telegramIdFromEmail(email: string | null | undefined): string | 
   return match ? match[1] : null;
 }
 
-// Both env vars stay unset until the bot side of this bridge exists (not
-// built as of 2026-08) — every function below silently no-ops in that case
-// rather than throwing, since neither banning an account nor rendering the
-// iPhone gate page should ever depend on an external system responding.
-function bridgeConfig(): { baseUrl: string; secret: string } | null {
+// Shared by both ban paths (the auto-ban cascade and the manual "Suspender"
+// button) — a fan's grants are the only record of which creator(s) they
+// actually belong to, so this has to be looked up fresh each time rather
+// than assumed. Empty array means "couldn't resolve" (no grants), which
+// callers treat as "use the unscoped/Chivis bridge" to preserve the
+// original behavior rather than notifying nobody.
+export async function resolveCreatorHandlesForFan(
+  admin: SupabaseClient,
+  fanId: string,
+): Promise<string[]> {
+  const { data: grants } = await admin
+    .from("collection_access_grants")
+    .select("content_collections(creators(handle))")
+    .eq("fan_id", fanId);
+  const handles = new Set<string>();
+  for (const grant of grants ?? []) {
+    const collection = grant.content_collections as unknown as
+      | { creators: { handle: string } | null }
+      | null;
+    const handle = collection?.creators?.handle;
+    if (handle) handles.add(handle);
+  }
+  return Array.from(handles);
+}
+
+// TELEGRAM_BOT_BRIDGE_URL/_SECRET (unscoped) is Chivis's bridge — the first
+// and, until 2026-08-21, the ONLY one wired. Every ban notification went
+// there regardless of which creator the fan actually belonged to (confirmed
+// bug: a Lore fan's suspension notified Chivis's admin chat, and Lore's bot
+// never got told to kick them from Telegram at all — Lore had no /onyx/ban
+// route to receive it either). Fixed by scoping per creator handle:
+// TELEGRAM_BOT_BRIDGE_URL_<HANDLE>/_SECRET_<HANDLE> (e.g. `_LORE`). A creator
+// with no scoped vars set gets no notification at all rather than silently
+// falling back to another creator's bot — that fallback is exactly the bug
+// this replaces. `null`/"chivis" keeps using the original unscoped vars, so
+// Chivis's existing setup needs no Railway changes.
+function bridgeConfig(creatorHandle: string | null): { baseUrl: string; secret: string } | null {
+  if (creatorHandle && creatorHandle !== "chivis") {
+    const suffix = creatorHandle.toUpperCase();
+    const baseUrl = process.env[`TELEGRAM_BOT_BRIDGE_URL_${suffix}`];
+    const secret = process.env[`TELEGRAM_BOT_BRIDGE_SECRET_${suffix}`];
+    if (!baseUrl || !secret) return null;
+    return { baseUrl, secret };
+  }
   const baseUrl = process.env.TELEGRAM_BOT_BRIDGE_URL;
   const secret = process.env.TELEGRAM_BOT_BRIDGE_SECRET;
   if (!baseUrl || !secret) return null;
@@ -23,9 +63,12 @@ function bridgeConfig(): { baseUrl: string; secret: string } | null {
 
 // Fire-and-forget: called from applyBan(), which must never fail or block
 // on this. Reuses telegramId, not userId — the bot has no concept of Onyx's
-// internal ids.
-export function notifyBotOfBan(telegramId: string, reason: string): void {
-  const config = bridgeConfig();
+// internal ids. creatorHandle comes from the fan's collection_access_grants
+// at ban time (see banCascade.ts) — null means it couldn't be resolved
+// (fan has no grants), which falls back to the unscoped/Chivis bridge same
+// as always rather than notifying nobody.
+export function notifyBotOfBan(telegramId: string, reason: string, creatorHandle: string | null): void {
+  const config = bridgeConfig(creatorHandle);
   if (!config) return;
 
   fetch(`${config.baseUrl}/onyx/ban`, {
@@ -42,11 +85,15 @@ export function notifyBotOfBan(telegramId: string, reason: string): void {
 // before delivery_channel flips to "app", or they'd briefly hold both.
 // Still never throws: a failed revoke shouldn't block the request, since
 // the fan's Onyx-side access is what actually gates viewing from here on.
+// Not creator-scoped yet (still only reaches Chivis's bridge) — the callers
+// here (middleware.ts's device-switch enforcement) don't carry creator
+// context the way the ban path now does. Same gap as before this file's ban
+// routing got fixed; tracked as a known follow-up, not fixed here.
 export async function revokeTelegramAccess(
   telegramId: string,
   channelCodes: string[],
 ): Promise<boolean> {
-  const config = bridgeConfig();
+  const config = bridgeConfig(null);
   if (!config || channelCodes.length === 0) return false;
 
   try {
@@ -66,11 +113,12 @@ export async function revokeTelegramAccess(
 // on whether this actually worked — but still never throws; a network
 // error or an unconfigured bridge both just mean "couldn't request it",
 // which the page falls back to a generic holding message for.
+// Same not-yet-creator-scoped caveat as revokeTelegramAccess above.
 export async function requestTelegramInvites(
   telegramId: string,
   channelCodes: string[],
 ): Promise<boolean> {
-  const config = bridgeConfig();
+  const config = bridgeConfig(null);
   if (!config || channelCodes.length === 0) return false;
 
   try {
