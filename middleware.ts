@@ -332,7 +332,20 @@ export const config = {
   // the response goes out) was actually breaking the download outright —
   // 503s under Railway, even for an authenticated request — not just adding
   // needless latency.
+  //
+  // api/bot/ excluded for the identical reason, confirmed 2026-08-24 for
+  // uploads instead of downloads: this middleware calls updateSession()
+  // unconditionally before any path check runs, and passing a large
+  // multipart body (a video from content-scheduler's Onyx mirror) through
+  // that — even though isPublicPath() already treats every /api/ request as
+  // a no-op past that point — silently corrupted the request body
+  // somewhere between 10-11MB, reproduced directly against this route:
+  // request.formData() came back empty (every field missing, not just the
+  // large file), which the route reported as "channelCode es requerido"
+  // since that's the first field it checks. Every bot route authenticates
+  // itself via a shared secret header and needs nothing from this
+  // middleware, so this whole prefix can bypass it entirely.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|downloads/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|downloads/|api/bot/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };
