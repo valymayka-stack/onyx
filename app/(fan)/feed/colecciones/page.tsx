@@ -6,7 +6,17 @@ import FanNav from "@/components/FanNav";
 import ProtectedContentGuard from "@/components/ProtectedContentGuard";
 import CollectionConsentGate from "@/components/CollectionConsentGate";
 import CollectionPhotoViewer from "@/components/CollectionPhotoViewer";
+import UnlockButton from "@/components/UnlockButton";
 import { Card, CardContent } from "@/components/ui/card";
+
+// Pilot scope for in-app unlocking (Grupo cross-creator + colecciones
+// sueltas): Chivis's own fans, seeing Lore's Grupo VIP under "Explora más"
+// plus Chivis's own extra priced collections below. Valentina is
+// deliberately excluded — no Onyx presence at all yet. Hardcoded to these
+// two creator ids rather than a generic "every creator" system, matching
+// the confirmed pilot scope — extend this list once more creators migrate.
+const CHIVIS_CREATOR_ID = "b6650539-cf33-480d-a75e-7e6ef2acb255";
+const EXPLORA_MAS_CREATOR_IDS = ["6b5c169f-38cb-4d2d-856e-22a6cb379eb8"]; // Lore
 
 // The classic, non-feed collection view — this is exactly what /feed used
 // to render before Grupo/Exclusive Chivis got its own infinite-scroll feed
@@ -76,12 +86,145 @@ export default async function ColeccionesPage() {
     (i) => !i.publish_at || new Date(i.publish_at) <= now,
   );
 
+  // "Explora más" + unlockable extra colecciones — pilot scope, Chivis's own
+  // active fans only.
+  const { data: chivisSub } = await admin
+    .from("subscriptions")
+    .select("status")
+    .eq("fan_id", user!.id)
+    .eq("creator_id", CHIVIS_CREATOR_ID)
+    .eq("status", "active")
+    .gt("ends_at", now.toISOString())
+    .maybeSingle();
+
+  let exploraMasCreators: {
+    id: string;
+    handle: string;
+    monthlyPriceCents: number;
+    coverUrl: string | null;
+  }[] = [];
+  let unlockableCollections: {
+    id: string;
+    title: string;
+    priceCents: number;
+    coverUrl: string | null;
+  }[] = [];
+
+  if (chivisSub) {
+    const { data: mySubs } = await admin
+      .from("subscriptions")
+      .select("creator_id")
+      .eq("fan_id", user!.id)
+      .in("status", ["pending", "active"]);
+    const alreadySubscribedCreatorIds = new Set((mySubs ?? []).map((s) => s.creator_id));
+
+    const otherCreatorIds = EXPLORA_MAS_CREATOR_IDS.filter((id) => !alreadySubscribedCreatorIds.has(id));
+    if (otherCreatorIds.length > 0) {
+      const { data: otherCreators } = await admin
+        .from("creators")
+        .select("id, handle, monthly_price_cents")
+        .in("id", otherCreatorIds)
+        .eq("active", true);
+
+      const { data: feedCollections } = await admin
+        .from("content_collections")
+        .select("id, creator_id, cover_item_id")
+        .in("creator_id", otherCreatorIds)
+        .eq("is_feed", true);
+      const feedCoverByCreator = new Map(
+        (feedCollections ?? []).map((c) => [c.creator_id, c.cover_item_id as string | null]),
+      );
+
+      exploraMasCreators = (otherCreators ?? []).map((c) => ({
+        id: c.id,
+        handle: c.handle,
+        monthlyPriceCents: c.monthly_price_cents,
+        coverUrl: feedCoverByCreator.get(c.id)
+          ? `/api/content/${feedCoverByCreator.get(c.id)}?t=${issueContentToken(feedCoverByCreator.get(c.id)!, user!.id)}`
+          : null,
+      }));
+    }
+
+    const { data: extraCollections } = await admin
+      .from("content_collections")
+      .select("id, title, cover_item_id, price_cents")
+      .eq("creator_id", CHIVIS_CREATOR_ID)
+      .eq("is_hidden", false)
+      .eq("is_feed", false)
+      .not("price_cents", "is", null)
+      .not("id", "in", `(${allowedCollectionIds.length > 0 ? allowedCollectionIds.join(",") : "00000000-0000-0000-0000-000000000000"})`)
+      .order("title", { ascending: true });
+
+    unlockableCollections = (extraCollections ?? []).map((c) => ({
+      id: c.id,
+      title: c.title,
+      priceCents: c.price_cents as number,
+      coverUrl: c.cover_item_id
+        ? `/api/content/${c.cover_item_id}?t=${issueContentToken(c.cover_item_id, user!.id)}`
+        : null,
+    }));
+  }
+
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col gap-6 p-8">
       <FanNav />
       <AppHeader title="Colecciones" subtitle="Tus colecciones asignadas" />
 
       <ProtectedContentGuard>
+        {exploraMasCreators.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-sm font-medium text-muted-foreground">Explora más</h2>
+            {exploraMasCreators.map((creator) => (
+              <Card key={creator.id}>
+                <CardContent className="flex items-center gap-3">
+                  {creator.coverUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={creator.coverUrl}
+                      alt=""
+                      className="size-16 shrink-0 rounded-lg object-cover"
+                    />
+                  )}
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">@{creator.handle}</p>
+                    <p className="text-xs text-muted-foreground">
+                      ${(creator.monthlyPriceCents / 100).toFixed(0)} MXN/mes
+                    </p>
+                  </div>
+                  <UnlockButton kind="subscription" creatorId={creator.id} label="Desbloquear" />
+                </CardContent>
+              </Card>
+            ))}
+          </section>
+        )}
+
+        {unlockableCollections.length > 0 && (
+          <section className="flex flex-col gap-3">
+            <h2 className="text-sm font-medium text-muted-foreground">Desbloquea más</h2>
+            {unlockableCollections.map((collection) => (
+              <Card key={collection.id}>
+                <CardContent className="flex items-center gap-3">
+                  {collection.coverUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={collection.coverUrl}
+                      alt=""
+                      className="size-16 shrink-0 rounded-lg object-cover"
+                    />
+                  )}
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">{collection.title}</p>
+                    <p className="text-xs text-muted-foreground">
+                      ${(collection.priceCents / 100).toFixed(0)} MXN
+                    </p>
+                  </div>
+                  <UnlockButton kind="collection" collectionId={collection.id} label="Desbloquear" />
+                </CardContent>
+              </Card>
+            ))}
+          </section>
+        )}
+
         {collections.length > 0 ? (
           <section className="flex flex-col gap-8">
             {collections.map((collection) => {

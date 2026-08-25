@@ -14,6 +14,7 @@ const LINKS = [
   { href: "/admin/collections", label: "Colecciones" },
   { href: "/admin/content", label: "Contenido" },
   { href: "/admin/promo", label: "Explora más" },
+  { href: "/admin/revenue", label: "Ingresos" },
   { href: "/admin/leaks", label: "Fugas" },
   { href: "/admin/watermark-check", label: "Verificar marca" },
   { href: "/admin/access", label: "Accesos" },

@@ -78,6 +78,40 @@ async function countRecentBlurEvents(
   return count ?? 0;
 }
 
+// The in-app unlock flow (Clip's redirect checkout) intentionally does the
+// exact thing external_capture_suspected is built to catch: leave the app
+// for several seconds, come back, tap something. Rather than weaken that
+// signal generally, this checks for a REAL, server-recorded pending payment
+// this same user just created — never a client-supplied "I'm paying" flag,
+// which could otherwise be forged to evade real screen-recording detection.
+const PAYMENT_GRACE_WINDOW_MINUTES = 10;
+
+async function hasRecentPendingPayment(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<boolean> {
+  const since = new Date(Date.now() - PAYMENT_GRACE_WINDOW_MINUTES * 60_000).toISOString();
+
+  const [{ count: paymentCount }, { count: purchaseCount }] = await Promise.all([
+    admin
+      .from("payments")
+      .select("id", { count: "exact", head: true })
+      .eq("fan_id", userId)
+      .eq("status", "pending")
+      .eq("processor", "clip")
+      .gte("created_at", since),
+    admin
+      .from("collection_purchases")
+      .select("id", { count: "exact", head: true })
+      .eq("fan_id", userId)
+      .eq("status", "pending")
+      .eq("processor", "clip")
+      .gte("created_at", since),
+  ]);
+
+  return (paymentCount ?? 0) > 0 || (purchaseCount ?? 0) > 0;
+}
+
 // Client telemetry (right-click/drag/selection/blur blocked, DevTools
 // suspected). The row always carries the server-verified session user, never
 // a client-supplied id — a hostile client could otherwise forge events under
@@ -124,7 +158,16 @@ export async function POST(request: NextRequest) {
   });
 
   let banReason: string | null = null;
-  if (user && AUTO_BAN_EVENT_TYPES.has(body.eventType)) {
+  if (
+    user &&
+    body.eventType === "external_capture_suspected" &&
+    (await hasRecentPendingPayment(admin, user.id))
+  ) {
+    // Suppressed: a real, server-recorded Clip checkout this user started
+    // within the last PAYMENT_GRACE_WINDOW_MINUTES fully explains the
+    // blur-then-click pattern. Still logged above for audit visibility —
+    // just not treated as ban-worthy this one time.
+  } else if (user && AUTO_BAN_EVENT_TYPES.has(body.eventType)) {
     banReason = body.eventType;
   } else if (user && body.eventType === "blur") {
     const recentBlurs = await countRecentBlurEvents(admin, user.id);
