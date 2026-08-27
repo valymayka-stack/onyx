@@ -10,13 +10,18 @@ import UnlockButton from "@/components/UnlockButton";
 import { Card, CardContent } from "@/components/ui/card";
 
 // Pilot scope for in-app unlocking (Grupo cross-creator + colecciones
-// sueltas): Chivis's own fans, seeing Lore's Grupo VIP under "Explora más"
-// plus Chivis's own extra priced collections below. Valentina is
-// deliberately excluded — no Onyx presence at all yet. Hardcoded to these
-// two creator ids rather than a generic "every creator" system, matching
-// the confirmed pilot scope — extend this list once more creators migrate.
+// sueltas): Chivis's own fans, seeing Lore's Grupo VIP under "Otras
+// creadoras" plus Chivis's own extra priced collections below. Deliberately
+// NOT called "Explora más" — that name is already taken by the pre-existing
+// /feed/explora page (static promo cards linking out to Telegram, see
+// 0018_promo_cards.sql), a completely different feature. Two different
+// things sharing that name in the fan-facing app would be genuinely
+// confusing, not just a cosmetic clash. Valentina is deliberately excluded
+// from this section — no Onyx presence at all yet. Hardcoded to these two
+// creator ids rather than a generic "every creator" system, matching the
+// confirmed pilot scope — extend this list once more creators migrate.
 const CHIVIS_CREATOR_ID = "b6650539-cf33-480d-a75e-7e6ef2acb255";
-const EXPLORA_MAS_CREATOR_IDS = ["6b5c169f-38cb-4d2d-856e-22a6cb379eb8"]; // Lore
+const OTHER_CREATORS_TO_UNLOCK_IDS = ["6b5c169f-38cb-4d2d-856e-22a6cb379eb8"]; // Lore
 
 // The classic, non-feed collection view — this is exactly what /feed used
 // to render before Grupo/Exclusive Chivis got its own infinite-scroll feed
@@ -97,7 +102,7 @@ export default async function ColeccionesPage() {
     .gt("ends_at", now.toISOString())
     .maybeSingle();
 
-  let exploraMasCreators: {
+  let otherCreatorsToUnlock: {
     id: string;
     handle: string;
     monthlyPriceCents: number;
@@ -118,7 +123,7 @@ export default async function ColeccionesPage() {
       .in("status", ["pending", "active"]);
     const alreadySubscribedCreatorIds = new Set((mySubs ?? []).map((s) => s.creator_id));
 
-    const otherCreatorIds = EXPLORA_MAS_CREATOR_IDS.filter((id) => !alreadySubscribedCreatorIds.has(id));
+    const otherCreatorIds = OTHER_CREATORS_TO_UNLOCK_IDS.filter((id) => !alreadySubscribedCreatorIds.has(id));
     if (otherCreatorIds.length > 0) {
       const { data: otherCreators } = await admin
         .from("creators")
@@ -135,7 +140,7 @@ export default async function ColeccionesPage() {
         (feedCollections ?? []).map((c) => [c.creator_id, c.cover_item_id as string | null]),
       );
 
-      exploraMasCreators = (otherCreators ?? []).map((c) => ({
+      otherCreatorsToUnlock = (otherCreators ?? []).map((c) => ({
         id: c.id,
         handle: c.handle,
         monthlyPriceCents: c.monthly_price_cents,
@@ -171,11 +176,11 @@ export default async function ColeccionesPage() {
       <AppHeader title="Colecciones" subtitle="Tus colecciones asignadas" />
 
       <ProtectedContentGuard>
-        {exploraMasCreators.length > 0 && (
+        {otherCreatorsToUnlock.length > 0 && (
           <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-muted-foreground">Explora más</h2>
-            {exploraMasCreators.map((creator) => (
-              <Card key={creator.id}>
+            <h2 className="text-sm font-medium text-destructive">✨ Otras creadoras</h2>
+            {otherCreatorsToUnlock.map((creator) => (
+              <Card key={creator.id} className="border-destructive/40 bg-destructive/5">
                 <CardContent className="flex items-center gap-3">
                   {creator.coverUrl && (
                     // eslint-disable-next-line @next/next/no-img-element
@@ -200,9 +205,9 @@ export default async function ColeccionesPage() {
 
         {unlockableCollections.length > 0 && (
           <section className="flex flex-col gap-3">
-            <h2 className="text-sm font-medium text-muted-foreground">Desbloquea más</h2>
+            <h2 className="text-sm font-medium text-destructive">✨ Desbloquea más</h2>
             {unlockableCollections.map((collection) => (
-              <Card key={collection.id}>
+              <Card key={collection.id} className="border-destructive/40 bg-destructive/5">
                 <CardContent className="flex items-center gap-3">
                   {collection.coverUrl && (
                     // eslint-disable-next-line @next/next/no-img-element

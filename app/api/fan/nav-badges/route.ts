@@ -75,5 +75,53 @@ export async function GET() {
     (!profile?.collections_last_seen_at ||
       new Date(latestGrantAt) > new Date(profile.collections_last_seen_at));
 
-  return NextResponse.json({ grupo: grupoHasNew, colecciones: coleccionesHasNew });
+  // In-app unlocking pilot (2026-08): a dot for "there's something new you
+  // could buy," independent of and additive to the "you were just granted
+  // something" dot above — same nav destination (Colecciones, where both
+  // sections render), so folding it into the same boolean is safe: it can
+  // only ever make the existing dot show up in more cases, never fewer,
+  // and never changes what the dot means for a fan who owns nothing new.
+  // Chivis-fans-only pilot scope, same hardcoded ids as
+  // app/(fan)/feed/colecciones/page.tsx — keep both in sync if this expands.
+  const CHIVIS_CREATOR_ID = "b6650539-cf33-480d-a75e-7e6ef2acb255";
+  const OTHER_CREATORS_TO_UNLOCK_IDS = ["6b5c169f-38cb-4d2d-856e-22a6cb379eb8"]; // Lore
+
+  let hasUnlockable = false;
+  const { data: chivisSub } = await admin
+    .from("subscriptions")
+    .select("status")
+    .eq("fan_id", user.id)
+    .eq("creator_id", CHIVIS_CREATOR_ID)
+    .eq("status", "active")
+    .gt("ends_at", now.toISOString())
+    .maybeSingle();
+
+  if (chivisSub) {
+    const alreadySubscribedCreatorIds = new Set(
+      (await admin.from("subscriptions").select("creator_id").eq("fan_id", user.id).in("status", ["pending", "active"])).data?.map(
+        (s) => s.creator_id,
+      ) ?? [],
+    );
+    const hasOtherCreatorToUnlock = OTHER_CREATORS_TO_UNLOCK_IDS.some(
+      (id) => !alreadySubscribedCreatorIds.has(id),
+    );
+
+    const ownedCollectionIds = activeGrants.map((g) => g.collection_id);
+    const { count: unlockableCount } = await admin
+      .from("content_collections")
+      .select("id", { count: "exact", head: true })
+      .eq("creator_id", CHIVIS_CREATOR_ID)
+      .eq("is_hidden", false)
+      .eq("is_feed", false)
+      .not("price_cents", "is", null)
+      .not(
+        "id",
+        "in",
+        `(${ownedCollectionIds.length > 0 ? ownedCollectionIds.join(",") : "00000000-0000-0000-0000-000000000000"})`,
+      );
+
+    hasUnlockable = hasOtherCreatorToUnlock || (unlockableCount ?? 0) > 0;
+  }
+
+  return NextResponse.json({ grupo: grupoHasNew, colecciones: coleccionesHasNew || hasUnlockable });
 }
