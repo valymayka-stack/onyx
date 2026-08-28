@@ -66,14 +66,30 @@ export async function compositeVisibleWatermarkRaw(
 ): Promise<RawImage> {
   const label = `${opts.userId.slice(0, 8)} · ${opts.sessionId.slice(0, 8)} · ${opts.timestamp}`;
 
-  const base = sharp(imageBuffer).rotate(); // rotate() with no args normalizes EXIF orientation
-  const meta = await base.metadata();
-  const width = meta.width ?? 800;
-  const height = meta.height ?? 600;
+  // rotate() with no args auto-applies EXIF orientation, but sharp's own
+  // .metadata() keeps reporting the file's *pre-rotation* width/height for
+  // photos with a 90°/270° orientation tag — extremely common for portrait
+  // phone shots, whose sensor data is stored landscape plus a rotation flag.
+  // Building the SVG overlay from that stale (swapped) size made every one
+  // of those photos throw "Image to composite must have same dimensions or
+  // smaller", failing the fan's delivery outright with no fallback (found
+  // 2026-08-28: 60 real occurrences in production over the prior day and a
+  // half). Fix: decode+rotate to raw pixels first — no lossy re-encode, so
+  // there's still only one JPEG generation, at the route's final .jpeg()
+  // call — and read the real post-rotation size off of *that* buffer's own
+  // info instead of trusting metadata read before rotation was applied.
+  const { data: rotatedRaw, info: rotatedInfo } = await sharp(imageBuffer)
+    .rotate()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
 
+  const width = rotatedInfo.width;
+  const height = rotatedInfo.height;
   const overlaySvg = buildTiledSvgOverlay(label, width, height);
 
-  const { data, info } = await base
+  const { data, info } = await sharp(rotatedRaw, {
+    raw: { width, height, channels: rotatedInfo.channels as 1 | 2 | 3 | 4 },
+  })
     .composite([{ input: Buffer.from(overlaySvg), top: 0, left: 0 }])
     .removeAlpha()
     .toColourspace("srgb")
