@@ -21,7 +21,16 @@ const EVENT_LIMIT_PER_MINUTE = 30;
 //   by a click once back — the indirect signal for "switched to a screen
 //   recorder and came back to click through the photos." Same trade-off as
 //   devtools_suspected: a slow return-and-click after any unrelated blur can
-//   also trigger this.
+//   also trigger this. SUPPRESSED on Android app users specifically (see
+//   isAndroidApp below) — checked against real ban_history data 2026-08-29:
+//   56 of 59 fans ever banned by this signal were device_type=android_app,
+//   where FLAG_SECURE already blocks the capture itself at the OS level (no
+//   callback exists for Android to report a blocked attempt back to us, so
+//   there's no ban-worthy signal to replace this with there — the OS-level
+//   block is simply the whole defense on that platform now). Everywhere
+//   else (iPhone stays on Telegram delivery, no in-app viewer exposure;
+//   any future non-Android web/native surface) this keeps auto-banning
+//   exactly as before.
 // - automation_detected: navigator.webdriver — set by every mainstream
 //   scraping framework (Puppeteer, Selenium, Playwright), never by a real
 //   fan's own browser.
@@ -112,6 +121,18 @@ async function hasRecentPendingPayment(
   return (paymentCount ?? 0) > 0 || (purchaseCount ?? 0) > 0;
 }
 
+async function isAndroidApp(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+): Promise<boolean> {
+  const { data } = await admin
+    .from("profiles")
+    .select("device_type")
+    .eq("id", userId)
+    .maybeSingle();
+  return data?.device_type === "android_app";
+}
+
 // Client telemetry (right-click/drag/selection/blur blocked, DevTools
 // suspected). The row always carries the server-verified session user, never
 // a client-supplied id — a hostile client could otherwise forge events under
@@ -167,6 +188,15 @@ export async function POST(request: NextRequest) {
     // within the last PAYMENT_GRACE_WINDOW_MINUTES fully explains the
     // blur-then-click pattern. Still logged above for audit visibility —
     // just not treated as ban-worthy this one time.
+  } else if (
+    user &&
+    body.eventType === "external_capture_suspected" &&
+    (await isAndroidApp(admin, user.id))
+  ) {
+    // Suppressed on Android app users (2026-08-29, see the comment on
+    // AUTO_BAN_EVENT_TYPES above) — FLAG_SECURE already blocks the capture
+    // itself, so this indirect heuristic has nothing left to add there
+    // besides false positives. Still logged above for audit visibility.
   } else if (user && AUTO_BAN_EVENT_TYPES.has(body.eventType)) {
     banReason = body.eventType;
   } else if (user && body.eventType === "blur") {
