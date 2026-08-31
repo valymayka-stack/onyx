@@ -148,6 +148,18 @@ export default async function ColeccionesPage() {
           ? `/api/content/${feedCoverByCreator.get(c.id)}?t=${issueContentToken(feedCoverByCreator.get(c.id)!, user!.id)}`
           : null,
       }));
+
+      // Fire-and-forget view counters (2026-08-31) — same pattern as the
+      // collections_last_seen_at update above: never awaited, errors only
+      // logged, so a slow or failed increment can never affect what the fan
+      // sees on this page.
+      for (const creator of otherCreatorsToUnlock) {
+        admin
+          .rpc("increment_creator_unlock_view", { p_creator_id: creator.id })
+          .then(({ error }) => {
+            if (error) console.error("Failed to increment creator unlock view", error);
+          });
+      }
     }
 
     const { data: extraCollections } = await admin
@@ -168,6 +180,15 @@ export default async function ColeccionesPage() {
         ? `/api/content/${c.cover_item_id}?t=${issueContentToken(c.cover_item_id, user!.id)}`
         : null,
     }));
+
+    // Fire-and-forget, same as the creator counters above.
+    for (const collection of unlockableCollections) {
+      admin
+        .rpc("increment_collection_unlock_view", { p_collection_id: collection.id })
+        .then(({ error }) => {
+          if (error) console.error("Failed to increment collection unlock view", error);
+        });
+    }
   }
 
   return (
