@@ -15,9 +15,11 @@ export default async function ExploraPage() {
 
   const { data: cards } = await admin
     .from("promo_cards")
-    .select("id, photo_path, title, description, link_url")
+    .select("id, photo_path, title, description, link_url, highlight_until")
     .eq("is_active", true)
     .order("sort_order", { ascending: true });
+
+  const today = new Date().toISOString().slice(0, 10);
 
   // Fire-and-forget, one atomic increment per card actually shown on this
   // load — not awaited, nothing on this page depends on it completing.
@@ -50,6 +52,9 @@ export default async function ExploraPage() {
                   <div className="flex flex-col items-center gap-1 text-center">
                     <h3 className="font-[family-name:var(--font-display)] text-2xl italic tracking-tight">
                       {card.title}
+                      {card.highlight_until && card.highlight_until >= today && (
+                        <span className="text-red-500"> *</span>
+                      )}
                     </h3>
                     {card.description && (
                       <p className="max-w-md text-sm text-muted-foreground">{card.description}</p>
