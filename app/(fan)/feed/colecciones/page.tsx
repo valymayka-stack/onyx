@@ -103,6 +103,7 @@ export default async function ColeccionesPage() {
     handle: string;
     monthlyPriceCents: number;
     coverUrl: string | null;
+    telegramLinkUrl: string | null;
   }[] = [];
   let unlockableCollections: {
     id: string;
@@ -138,6 +139,19 @@ export default async function ColeccionesPage() {
         (feedCollections ?? []).map((c) => [c.creator_id, c.cover_item_id as string | null]),
       );
 
+      // Fallback for anyone who'd rather join the old way (transfer via
+      // Telegram) than pay by card in-app — same link Explora más already
+      // uses for this creator (see 0026_promo_card_creator_link.sql). Only
+      // renders when one's actually set; most promo cards won't have one.
+      const { data: promoLinks } = await admin
+        .from("promo_cards")
+        .select("creator_id, link_url")
+        .in("creator_id", otherCreatorIds)
+        .eq("is_active", true);
+      const telegramLinkByCreator = new Map(
+        (promoLinks ?? []).map((p) => [p.creator_id as string, p.link_url as string]),
+      );
+
       otherCreatorsToUnlock = (otherCreators ?? []).map((c) => ({
         id: c.id,
         handle: c.handle,
@@ -145,6 +159,7 @@ export default async function ColeccionesPage() {
         coverUrl: feedCoverByCreator.get(c.id)
           ? `/api/content/${feedCoverByCreator.get(c.id)}?t=${issueContentToken(feedCoverByCreator.get(c.id)!, user!.id)}`
           : null,
+        telegramLinkUrl: telegramLinkByCreator.get(c.id) ?? null,
       }));
 
       // Fire-and-forget view counters (2026-08-31) — same pattern as the
@@ -215,7 +230,19 @@ export default async function ColeccionesPage() {
                       ${(creator.monthlyPriceCents / 100).toFixed(0)} MXN/mes
                     </p>
                   </div>
-                  <UnlockButton kind="subscription" creatorId={creator.id} label="Desbloquear" />
+                  <div className="flex flex-col items-end gap-1.5">
+                    <UnlockButton kind="subscription" creatorId={creator.id} label="Desbloquear" />
+                    {creator.telegramLinkUrl && (
+                      <a
+                        href={creator.telegramLinkUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-muted-foreground underline underline-offset-2"
+                      >
+                        o únete por Telegram
+                      </a>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             ))}
