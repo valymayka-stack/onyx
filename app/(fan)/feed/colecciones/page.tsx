@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { issueContentToken } from "@/lib/signing/contentToken";
+import { hasActiveCreatorAccess } from "@/lib/feed/creatorAccess";
 import AppHeader from "@/components/AppHeader";
 import FanNav from "@/components/FanNav";
 import ProtectedContentGuard from "@/components/ProtectedContentGuard";
@@ -92,15 +93,10 @@ export default async function ColeccionesPage() {
   );
 
   // "Explora más" + unlockable extra colecciones — pilot scope, Chivis's own
-  // active fans only.
-  const { data: chivisSub } = await admin
-    .from("subscriptions")
-    .select("status")
-    .eq("fan_id", user!.id)
-    .eq("creator_id", CHIVIS_CREATOR_ID)
-    .eq("status", "active")
-    .gt("ends_at", now.toISOString())
-    .maybeSingle();
+  // active fans only. Gated on a real collection_access_grants row (how
+  // every real fan's access actually gets provisioned), not Onyx's own
+  // `subscriptions` table — see lib/feed/creatorAccess.ts for why.
+  const hasActiveChivisAccess = await hasActiveCreatorAccess(admin, user!.id, CHIVIS_CREATOR_ID);
 
   let otherCreatorsToUnlock: {
     id: string;
@@ -115,15 +111,17 @@ export default async function ColeccionesPage() {
     coverUrl: string | null;
   }[] = [];
 
-  if (chivisSub) {
-    const { data: mySubs } = await admin
-      .from("subscriptions")
-      .select("creator_id")
-      .eq("fan_id", user!.id)
-      .in("status", ["pending", "active"]);
-    const alreadySubscribedCreatorIds = new Set((mySubs ?? []).map((s) => s.creator_id));
-
-    const otherCreatorIds = OTHER_CREATORS_TO_UNLOCK_IDS.filter((id) => !alreadySubscribedCreatorIds.has(id));
+  if (hasActiveChivisAccess) {
+    // Same collection_access_grants-based check as hasActiveChivisAccess
+    // above, one creator at a time — OTHER_CREATORS_TO_UNLOCK_IDS is a
+    // short hardcoded pilot list (currently just Lore), so a sequential
+    // await per id is negligible and keeps this identical in spirit to the
+    // main gate rather than introducing a second, different query shape.
+    const otherCreatorIds: string[] = [];
+    for (const id of OTHER_CREATORS_TO_UNLOCK_IDS) {
+      const alreadyHasAccess = await hasActiveCreatorAccess(admin, user!.id, id);
+      if (!alreadyHasAccess) otherCreatorIds.push(id);
+    }
     if (otherCreatorIds.length > 0) {
       const { data: otherCreators } = await admin
         .from("creators")

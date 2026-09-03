@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { hasActiveCreatorAccess } from "@/lib/feed/creatorAccess";
 
 // Backs the small "new content" dots in FanNav — a stopgap ahead of real
 // push notifications (2026-08). Two independent checks: is there a Grupo
@@ -87,24 +88,23 @@ export async function GET() {
   const OTHER_CREATORS_TO_UNLOCK_IDS = ["6b5c169f-38cb-4d2d-856e-22a6cb379eb8"]; // Lore
 
   let hasUnlockable = false;
-  const { data: chivisSub } = await admin
-    .from("subscriptions")
-    .select("status")
-    .eq("fan_id", user.id)
-    .eq("creator_id", CHIVIS_CREATOR_ID)
-    .eq("status", "active")
-    .gt("ends_at", now.toISOString())
-    .maybeSingle();
+  // Same collection_access_grants-based check as
+  // app/(fan)/feed/colecciones/page.tsx uses (lib/feed/creatorAccess.ts) —
+  // not Onyx's own `subscriptions` table, which is only ever populated by a
+  // direct in-app Clip checkout that (as of 2026-09) no real fan has ever
+  // completed, making that gate permanently false for everyone. Keep this
+  // in sync with that page — both must agree on who gets the pilot.
+  const hasActiveChivisAccess = await hasActiveCreatorAccess(admin, user.id, CHIVIS_CREATOR_ID);
 
-  if (chivisSub) {
-    const alreadySubscribedCreatorIds = new Set(
-      (await admin.from("subscriptions").select("creator_id").eq("fan_id", user.id).in("status", ["pending", "active"])).data?.map(
-        (s) => s.creator_id,
-      ) ?? [],
-    );
-    const hasOtherCreatorToUnlock = OTHER_CREATORS_TO_UNLOCK_IDS.some(
-      (id) => !alreadySubscribedCreatorIds.has(id),
-    );
+  if (hasActiveChivisAccess) {
+    let hasOtherCreatorToUnlock = false;
+    for (const id of OTHER_CREATORS_TO_UNLOCK_IDS) {
+      const alreadyHasAccess = await hasActiveCreatorAccess(admin, user.id, id);
+      if (!alreadyHasAccess) {
+        hasOtherCreatorToUnlock = true;
+        break;
+      }
+    }
 
     const ownedCollectionIds = activeGrants.map((g) => g.collection_id);
     const { count: unlockableCount } = await admin
