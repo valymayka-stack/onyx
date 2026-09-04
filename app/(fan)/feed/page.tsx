@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGrupoFeedPage } from "@/lib/feed/grupoFeed";
 import {
-  hasActiveCreatorAccess,
   getUnlockableOtherCreators,
   getPendingSubscriptionCreatorIds,
   getPendingReceiptCreatorIds,
@@ -16,9 +15,6 @@ import UnlockButton from "@/components/UnlockButton";
 import ManualTransferPanel from "@/components/ManualTransferPanel";
 import { Card, CardContent } from "@/components/ui/card";
 
-// Same pilot scope as app/(fan)/feed/colecciones/page.tsx — keep this list
-// in sync with that one (both must agree on who's eligible).
-const CHIVIS_CREATOR_ID = "b6650539-cf33-480d-a75e-7e6ef2acb255";
 const OTHER_CREATORS_TO_UNLOCK_IDS = ["6b5c169f-38cb-4d2d-856e-22a6cb379eb8"]; // Lore
 
 // Landing page for fans — the infinite-scroll Grupo/Exclusive Chivis feed.
@@ -45,15 +41,12 @@ export default async function FeedPage() {
       if (error) console.error("Failed to update grupo_last_seen_at", error);
     });
 
-  // Cross-creator unlock banner (2026-09-04) — shown on login/entry, not
-  // just buried in Colecciones. Same pilot scope/eligibility as that page
-  // (getUnlockableOtherCreators), so it only ever shows to a real active
-  // Chivis fan who doesn't already have Lore, and agrees with Colecciones
-  // on price/link/eligibility since both call the same function.
-  const hasActiveChivisAccess = await hasActiveCreatorAccess(admin, user!.id, CHIVIS_CREATOR_ID);
-  const otherCreatorsToUnlock = hasActiveChivisAccess
-    ? await getUnlockableOtherCreators(admin, user!.id, OTHER_CREATORS_TO_UNLOCK_IDS)
-    : [];
+  // Cross-creator unlock banner (2026-09-04, widened 2026-09-04 to every
+  // Onyx fan rather than only Chivis's) — shown on login/entry, not just
+  // buried in Colecciones. getUnlockableOtherCreators already excludes
+  // anyone who already has active Lore access (including Lore's own fans),
+  // so this is safe to compute unconditionally for whoever is logged in.
+  const otherCreatorsToUnlock = await getUnlockableOtherCreators(admin, user!.id, OTHER_CREATORS_TO_UNLOCK_IDS);
 
   // 2026-09-04: the Clip checkout used to show an unfamiliar business name
   // with no logo, a likely reason the first real attempts all abandoned at
