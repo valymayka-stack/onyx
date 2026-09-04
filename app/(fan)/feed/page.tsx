@@ -1,7 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getGrupoFeedPage } from "@/lib/feed/grupoFeed";
-import { hasActiveCreatorAccess, getUnlockableOtherCreators } from "@/lib/feed/creatorAccess";
+import {
+  hasActiveCreatorAccess,
+  getUnlockableOtherCreators,
+  getPendingSubscriptionCreatorIds,
+} from "@/lib/feed/creatorAccess";
 import AppHeader from "@/components/AppHeader";
 import FanNav from "@/components/FanNav";
 import ProtectedContentGuard from "@/components/ProtectedContentGuard";
@@ -48,6 +52,20 @@ export default async function FeedPage() {
     ? await getUnlockableOtherCreators(admin, user!.id, OTHER_CREATORS_TO_UNLOCK_IDS)
     : [];
 
+  // 2026-09-04: the Clip checkout used to show an unfamiliar business name
+  // with no logo, a likely reason the first real attempts all abandoned at
+  // that screen — now fixed on Clip's side. For a fan who already started
+  // (and dropped) that checkout, swap the pitch for a "finish what you
+  // started" nudge instead of repeating the generic offer.
+  const pendingCreatorIds =
+    otherCreatorsToUnlock.length > 0
+      ? await getPendingSubscriptionCreatorIds(
+          admin,
+          user!.id,
+          otherCreatorsToUnlock.map((c) => c.id),
+        )
+      : new Set<string>();
+
   // Same fire-and-forget view counter Colecciones already uses — a fan
   // seeing this banner counts as a view of that creator's unlock pitch
   // either way.
@@ -64,29 +82,47 @@ export default async function FeedPage() {
       <FanNav />
       <AppHeader title="Grupo" subtitle="Lo más reciente" />
 
-      {otherCreatorsToUnlock.map((creator) => (
-        <Card key={creator.id} className="border-destructive/40 bg-destructive/5">
-          <CardContent className="flex flex-col gap-2 text-center">
-            <p className="text-sm font-medium">
-              ✨ ¿Sabías que <span className="capitalize">{creator.handle}</span> VIP ya está aquí?
-            </p>
-            <p className="text-xs text-muted-foreground">Desbloquéala ahora</p>
-            <div className="flex flex-col items-center gap-1.5">
-              <UnlockButton kind="subscription" creatorId={creator.id} label="Desbloquear" />
-              {creator.telegramLinkUrl && (
-                <a
-                  href={creator.telegramLinkUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-xs text-muted-foreground underline underline-offset-2"
-                >
-                  o contáctala aquí
-                </a>
+      {otherCreatorsToUnlock.map((creator) => {
+        const isPending = pendingCreatorIds.has(creator.id);
+        return (
+          <Card key={creator.id} className="border-destructive/40 bg-destructive/5">
+            <CardContent className="flex flex-col gap-2 text-center">
+              {isPending ? (
+                <>
+                  <p className="text-sm font-medium">
+                    ⏳ Tienes un pago incompleto para <span className="capitalize">{creator.handle}</span> VIP
+                  </p>
+                  <p className="text-xs text-muted-foreground">Complétalo ahora para no perder tu acceso</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm font-medium">
+                    ✨ ¿Sabías que <span className="capitalize">{creator.handle}</span> VIP ya está aquí?
+                  </p>
+                  <p className="text-xs text-muted-foreground">Desbloquéala ahora</p>
+                </>
               )}
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+              <div className="flex flex-col items-center gap-1.5">
+                <UnlockButton
+                  kind="subscription"
+                  creatorId={creator.id}
+                  label={isPending ? "Completar pago" : "Desbloquear"}
+                />
+                {creator.telegramLinkUrl && (
+                  <a
+                    href={creator.telegramLinkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs text-muted-foreground underline underline-offset-2"
+                  >
+                    o contáctala aquí
+                  </a>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
 
       <ProtectedContentGuard>
         {expired ? (

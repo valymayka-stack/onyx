@@ -47,6 +47,32 @@ export async function hasActiveCreatorAccess(
   });
 }
 
+// Which of these creator ids has a real, still-open Clip checkout attempt for
+// this fan (subscriptions.status = 'pending' — created the moment they hit
+// "Desbloquear", see app/api/payments/clip/subscription/route.ts). Used only
+// to swap the unlock banner's copy for "you started this, finish it" instead
+// of the generic pitch — the checkout itself is unchanged, and clicking
+// UnlockButton again reuses the same pending subscription row (see that
+// route's existingSub handling), so no separate retry plumbing is needed.
+export async function getPendingSubscriptionCreatorIds(
+  admin: SupabaseClient,
+  fanId: string,
+  creatorIds: string[],
+): Promise<Set<string>> {
+  if (creatorIds.length === 0) return new Set();
+  const { data, error } = await admin
+    .from("subscriptions")
+    .select("creator_id")
+    .eq("fan_id", fanId)
+    .eq("status", "pending")
+    .in("creator_id", creatorIds);
+  if (error) {
+    console.error("getPendingSubscriptionCreatorIds query failed", error);
+    return new Set();
+  }
+  return new Set((data ?? []).map((row) => row.creator_id as string));
+}
+
 export interface UnlockableCreator {
   id: string;
   handle: string;

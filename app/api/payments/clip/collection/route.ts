@@ -58,7 +58,10 @@ export async function POST(request: NextRequest) {
   try {
     checkout = await createCheckout({
       amountCents: collection.price_cents,
-      description: collection.title,
+      // Deliberately generic (2026-09-04), same reasoning as the subscription
+      // checkout — the collection title would otherwise appear on the fan's
+      // bank/card statement.
+      description: "Acceso digital",
     });
   } catch (err) {
     return NextResponse.json(

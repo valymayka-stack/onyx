@@ -63,7 +63,10 @@ export async function POST(request: NextRequest) {
   try {
     checkout = await createCheckout({
       amountCents: creator.monthly_price_cents,
-      description: `Grupo ${creator.handle}`,
+      // Deliberately generic (2026-09-04) — a statement descriptor naming the
+      // creator/handle is both a privacy leak for the fan and a likely source
+      // of confused-charge disputes ("no reconozco este cargo").
+      description: "Acceso digital",
     });
   } catch (err) {
     return NextResponse.json(
