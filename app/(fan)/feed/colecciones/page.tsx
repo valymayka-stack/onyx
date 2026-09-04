@@ -1,7 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { issueContentToken } from "@/lib/signing/contentToken";
-import { hasActiveCreatorAccess } from "@/lib/feed/creatorAccess";
+import { hasActiveCreatorAccess, getUnlockableOtherCreators, type UnlockableCreator } from "@/lib/feed/creatorAccess";
 import AppHeader from "@/components/AppHeader";
 import FanNav from "@/components/FanNav";
 import ProtectedContentGuard from "@/components/ProtectedContentGuard";
@@ -98,13 +98,7 @@ export default async function ColeccionesPage() {
   // `subscriptions` table — see lib/feed/creatorAccess.ts for why.
   const hasActiveChivisAccess = await hasActiveCreatorAccess(admin, user!.id, CHIVIS_CREATOR_ID);
 
-  let otherCreatorsToUnlock: {
-    id: string;
-    handle: string;
-    monthlyPriceCents: number;
-    coverUrl: string | null;
-    telegramLinkUrl: string | null;
-  }[] = [];
+  let otherCreatorsToUnlock: UnlockableCreator[] = [];
   let unlockableCollections: {
     id: string;
     title: string;
@@ -113,55 +107,9 @@ export default async function ColeccionesPage() {
   }[] = [];
 
   if (hasActiveChivisAccess) {
-    // Same collection_access_grants-based check as hasActiveChivisAccess
-    // above, one creator at a time — OTHER_CREATORS_TO_UNLOCK_IDS is a
-    // short hardcoded pilot list (currently just Lore), so a sequential
-    // await per id is negligible and keeps this identical in spirit to the
-    // main gate rather than introducing a second, different query shape.
-    const otherCreatorIds: string[] = [];
-    for (const id of OTHER_CREATORS_TO_UNLOCK_IDS) {
-      const alreadyHasAccess = await hasActiveCreatorAccess(admin, user!.id, id);
-      if (!alreadyHasAccess) otherCreatorIds.push(id);
-    }
-    if (otherCreatorIds.length > 0) {
-      const { data: otherCreators } = await admin
-        .from("creators")
-        .select("id, handle, monthly_price_cents")
-        .in("id", otherCreatorIds)
-        .eq("active", true);
+    otherCreatorsToUnlock = await getUnlockableOtherCreators(admin, user!.id, OTHER_CREATORS_TO_UNLOCK_IDS);
 
-      const { data: feedCollections } = await admin
-        .from("content_collections")
-        .select("id, creator_id, cover_item_id")
-        .in("creator_id", otherCreatorIds)
-        .eq("is_feed", true);
-      const feedCoverByCreator = new Map(
-        (feedCollections ?? []).map((c) => [c.creator_id, c.cover_item_id as string | null]),
-      );
-
-      // Fallback for anyone who'd rather join the old way (transfer via
-      // Telegram) than pay by card in-app — same link Explora más already
-      // uses for this creator (see 0026_promo_card_creator_link.sql). Only
-      // renders when one's actually set; most promo cards won't have one.
-      const { data: promoLinks } = await admin
-        .from("promo_cards")
-        .select("creator_id, link_url")
-        .in("creator_id", otherCreatorIds)
-        .eq("is_active", true);
-      const telegramLinkByCreator = new Map(
-        (promoLinks ?? []).map((p) => [p.creator_id as string, p.link_url as string]),
-      );
-
-      otherCreatorsToUnlock = (otherCreators ?? []).map((c) => ({
-        id: c.id,
-        handle: c.handle,
-        monthlyPriceCents: c.monthly_price_cents,
-        coverUrl: feedCoverByCreator.get(c.id)
-          ? `/api/content/${feedCoverByCreator.get(c.id)}?t=${issueContentToken(feedCoverByCreator.get(c.id)!, user!.id)}`
-          : null,
-        telegramLinkUrl: telegramLinkByCreator.get(c.id) ?? null,
-      }));
-
+    if (otherCreatorsToUnlock.length > 0) {
       // Fire-and-forget view counters (2026-08-31) — same pattern as the
       // collections_last_seen_at update above: never awaited, errors only
       // logged, so a slow or failed increment can never affect what the fan

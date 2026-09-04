@@ -1,5 +1,6 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { issueContentToken } from "@/lib/signing/contentToken";
 
 // Real proof a fan has active access to a specific creator's content.
 //
@@ -43,5 +44,72 @@ export async function hasActiveCreatorAccess(
       : collection?.creator_id === creatorId;
     if (!matchesCreator) return false;
     return !grant.expires_at || new Date(grant.expires_at).getTime() > now;
+  });
+}
+
+export interface UnlockableCreator {
+  id: string;
+  handle: string;
+  monthlyPriceCents: number;
+  coverUrl: string | null;
+  telegramLinkUrl: string | null;
+}
+
+// Shared by every place that offers "unlock this other creator" — right
+// now app/(fan)/feed/colecciones/page.tsx (the pilot's original home) and
+// app/(fan)/feed/page.tsx (the login-landing banner, 2026-09-04). One
+// definition so they can never quietly disagree about who's eligible or
+// what link/price to show, the exact risk the nav-badges/colecciones
+// duplication already called out once. Returns only creators the fan
+// doesn't already have active access to (via hasActiveCreatorAccess).
+export async function getUnlockableOtherCreators(
+  admin: SupabaseClient,
+  fanId: string,
+  otherCreatorIds: string[],
+): Promise<UnlockableCreator[]> {
+  const eligibleIds: string[] = [];
+  for (const id of otherCreatorIds) {
+    const alreadyHasAccess = await hasActiveCreatorAccess(admin, fanId, id);
+    if (!alreadyHasAccess) eligibleIds.push(id);
+  }
+  if (eligibleIds.length === 0) return [];
+
+  const { data: creators } = await admin
+    .from("creators")
+    .select("id, handle, monthly_price_cents")
+    .in("id", eligibleIds)
+    .eq("active", true);
+  if (!creators || creators.length === 0) return [];
+
+  const { data: feedCollections } = await admin
+    .from("content_collections")
+    .select("id, creator_id, cover_item_id")
+    .in("creator_id", eligibleIds)
+    .eq("is_feed", true);
+  const feedCoverByCreator = new Map(
+    (feedCollections ?? []).map((c) => [c.creator_id, c.cover_item_id as string | null]),
+  );
+
+  // Fallback for anyone who'd rather join the old way (transfer via
+  // Telegram) than pay by card in-app — same link Explora más already uses
+  // for this creator (see 0026_promo_card_creator_link.sql).
+  const { data: promoLinks } = await admin
+    .from("promo_cards")
+    .select("creator_id, link_url")
+    .in("creator_id", eligibleIds)
+    .eq("is_active", true);
+  const telegramLinkByCreator = new Map(
+    (promoLinks ?? []).map((p) => [p.creator_id as string, p.link_url as string]),
+  );
+
+  return creators.map((c) => {
+    const coverItemId = feedCoverByCreator.get(c.id);
+    return {
+      id: c.id,
+      handle: c.handle,
+      monthlyPriceCents: c.monthly_price_cents,
+      coverUrl: coverItemId ? `/api/content/${coverItemId}?t=${issueContentToken(coverItemId, fanId)}` : null,
+      telegramLinkUrl: telegramLinkByCreator.get(c.id) ?? null,
+    };
   });
 }
