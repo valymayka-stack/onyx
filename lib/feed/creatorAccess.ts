@@ -73,6 +73,29 @@ export async function getPendingSubscriptionCreatorIds(
   return new Set((data ?? []).map((row) => row.creator_id as string));
 }
 
+// Same idea as getPendingSubscriptionCreatorIds, for a manual-transfer
+// receipt (app/api/payments/manual-transfer/route.ts) awaiting admin review
+// — while one is pending, the fan sees "we're reviewing it" instead of the
+// upload form again.
+export async function getPendingReceiptCreatorIds(
+  admin: SupabaseClient,
+  fanId: string,
+  creatorIds: string[],
+): Promise<Set<string>> {
+  if (creatorIds.length === 0) return new Set();
+  const { data, error } = await admin
+    .from("manual_transfer_receipts")
+    .select("creator_id")
+    .eq("fan_id", fanId)
+    .eq("status", "pending")
+    .in("creator_id", creatorIds);
+  if (error) {
+    console.error("getPendingReceiptCreatorIds query failed", error);
+    return new Set();
+  }
+  return new Set((data ?? []).map((row) => row.creator_id as string));
+}
+
 export interface UnlockableCreator {
   id: string;
   handle: string;

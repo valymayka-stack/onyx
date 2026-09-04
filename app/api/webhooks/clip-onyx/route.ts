@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getCheckoutStatus } from "@/lib/payments/clipClient";
-
-const SUBSCRIPTION_DAYS = 30;
+import { activateSubscription } from "@/lib/payments/activateSubscription";
 
 // Clip's webhook for Onyx's own dedicated merchant account — separate path
 // from any bot's webhook. Mirrors Taurina's proven pattern exactly: the POST
@@ -50,29 +49,11 @@ export async function POST(request: NextRequest) {
       .eq("id", payment.id);
 
     if (resolved === "approved" && payment.subscription_id) {
-      const startedAt = new Date();
-      const endsAt = new Date(startedAt.getTime() + SUBSCRIPTION_DAYS * 24 * 60 * 60 * 1000);
-
-      await admin
-        .from("subscriptions")
-        .update({ status: "active", started_at: startedAt.toISOString(), ends_at: endsAt.toISOString() })
-        .eq("id", payment.subscription_id);
-
-      const { data: feedCollection } = await admin
-        .from("content_collections")
-        .select("id")
-        .eq("creator_id", payment.creator_id)
-        .eq("is_feed", true)
-        .maybeSingle();
-
-      if (feedCollection) {
-        await admin
-          .from("collection_access_grants")
-          .upsert(
-            { collection_id: feedCollection.id, fan_id: payment.fan_id },
-            { onConflict: "collection_id,fan_id", ignoreDuplicates: true },
-          );
-      }
+      await activateSubscription(admin, {
+        subscriptionId: payment.subscription_id,
+        fanId: payment.fan_id,
+        creatorId: payment.creator_id,
+      });
     }
 
     return NextResponse.json({ ok: true });

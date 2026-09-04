@@ -18,6 +18,7 @@ const LINKS = [
   { href: "/admin/leaks", label: "Fugas" },
   { href: "/admin/watermark-check", label: "Verificar marca" },
   { href: "/admin/access", label: "Accesos" },
+  { href: "/admin/transfer-receipts", label: "Comprobantes" },
 ];
 
 export default function AdminNav() {

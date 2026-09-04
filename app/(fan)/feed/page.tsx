@@ -5,12 +5,15 @@ import {
   hasActiveCreatorAccess,
   getUnlockableOtherCreators,
   getPendingSubscriptionCreatorIds,
+  getPendingReceiptCreatorIds,
 } from "@/lib/feed/creatorAccess";
+import { BANK_TRANSFER_INFO } from "@/lib/payments/bankTransferInfo";
 import AppHeader from "@/components/AppHeader";
 import FanNav from "@/components/FanNav";
 import ProtectedContentGuard from "@/components/ProtectedContentGuard";
 import GroupFeedViewer from "@/components/GroupFeedViewer";
 import UnlockButton from "@/components/UnlockButton";
+import ManualTransferPanel from "@/components/ManualTransferPanel";
 import { Card, CardContent } from "@/components/ui/card";
 
 // Same pilot scope as app/(fan)/feed/colecciones/page.tsx — keep this list
@@ -66,6 +69,18 @@ export default async function FeedPage() {
         )
       : new Set<string>();
 
+  // A receipt already sent for review takes priority over everything else
+  // below — no point offering the card/transfer options again while one is
+  // in flight.
+  const pendingReceiptCreatorIds =
+    otherCreatorsToUnlock.length > 0
+      ? await getPendingReceiptCreatorIds(
+          admin,
+          user!.id,
+          otherCreatorsToUnlock.map((c) => c.id),
+        )
+      : new Set<string>();
+
   // Same fire-and-forget view counter Colecciones already uses — a fan
   // seeing this banner counts as a view of that creator's unlock pitch
   // either way.
@@ -84,10 +99,18 @@ export default async function FeedPage() {
 
       {otherCreatorsToUnlock.map((creator) => {
         const isPending = pendingCreatorIds.has(creator.id);
+        const hasReceiptInReview = pendingReceiptCreatorIds.has(creator.id);
         return (
           <Card key={creator.id} className="border-destructive/40 bg-destructive/5">
             <CardContent className="flex flex-col gap-2 text-center">
-              {isPending ? (
+              {hasReceiptInReview ? (
+                <>
+                  <p className="text-sm font-medium">
+                    ⏳ Tu comprobante para <span className="capitalize">{creator.handle}</span> VIP está en revisión
+                  </p>
+                  <p className="text-xs text-muted-foreground">Te avisamos en cuanto se apruebe</p>
+                </>
+              ) : isPending ? (
                 <>
                   <p className="text-sm font-medium">
                     ⏳ Tienes un pago incompleto para <span className="capitalize">{creator.handle}</span> VIP
@@ -102,23 +125,32 @@ export default async function FeedPage() {
                   <p className="text-xs text-muted-foreground">Desbloquéala ahora</p>
                 </>
               )}
-              <div className="flex flex-col items-center gap-1.5">
-                <UnlockButton
-                  kind="subscription"
-                  creatorId={creator.id}
-                  label={isPending ? "Completar pago" : "Desbloquear"}
-                />
-                {creator.telegramLinkUrl && (
-                  <a
-                    href={creator.telegramLinkUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs text-muted-foreground underline underline-offset-2"
-                  >
-                    o contáctala aquí
-                  </a>
-                )}
-              </div>
+              {!hasReceiptInReview && (
+                <div className="flex flex-col items-center gap-1.5">
+                  <UnlockButton
+                    kind="subscription"
+                    creatorId={creator.id}
+                    label={isPending ? "Completar pago" : "Desbloquear"}
+                  />
+                  <ManualTransferPanel
+                    creatorId={creator.id}
+                    bank={BANK_TRANSFER_INFO.bank}
+                    clabe={BANK_TRANSFER_INFO.clabe}
+                    accountHolder={BANK_TRANSFER_INFO.accountHolder}
+                    concept={BANK_TRANSFER_INFO.concept}
+                  />
+                  {creator.telegramLinkUrl && (
+                    <a
+                      href={creator.telegramLinkUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-muted-foreground underline underline-offset-2"
+                    >
+                      o contáctala aquí
+                    </a>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         );
