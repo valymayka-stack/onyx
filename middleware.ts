@@ -32,10 +32,49 @@ const ANDROID_GATE_PATH = "/android-app-required";
 const MOBILE_GATE_PATH = "/mobile-required";
 const IPHONE_GATE_PATH = "/telegram-access";
 const DEVICE_SWITCH_BLOCKED_PATH = "/device-switch-blocked";
-const GATE_PATHS = [ANDROID_GATE_PATH, MOBILE_GATE_PATH, IPHONE_GATE_PATH, DEVICE_SWITCH_BLOCKED_PATH];
+const ANDROID_UPDATE_REQUIRED_PATH = "/app-update-required";
+const GATE_PATHS = [
+  ANDROID_GATE_PATH,
+  MOBILE_GATE_PATH,
+  IPHONE_GATE_PATH,
+  DEVICE_SWITCH_BLOCKED_PATH,
+  ANDROID_UPDATE_REQUIRED_PATH,
+];
 
 function isUngatedAndroidBrowser(userAgent: string): boolean {
   return /Android/i.test(userAgent) && !userAgent.includes(ANDROID_APP_MARKER);
+}
+
+// Mandatory app-update gate (2026-09-05) — added after finding the Clip
+// checkout bug in MainActivity.kt's shouldOverrideUrlLoading (every Android
+// fan's card-payment attempt died there silently). There is no way to push
+// a code fix into an app a fan has already installed: v1 shipped with zero
+// update-check code at all, and v2's own checkForUpdate() dialog is
+// dismissible ("Más tarde") — a fan who taps that once keeps running the
+// broken build forever, with nothing client-side left to nudge them again.
+// The only lever that reaches an already-installed copy is this server-side
+// check, run fresh on every request regardless of which binary is asking.
+//
+// ANDROID_APP_MARKER carried no version number before this build (v1 and v2
+// both send the literal, hardcoded string "OnyxAndroidApp/1.0" — see the old
+// APP_UA_MARKER constant in MainActivity.kt) — so both are indistinguishable
+// from each other here and both fail this check by construction: only a
+// build carrying the new "OnyxAndroidApp/<versionName>(<versionCode>)"
+// format (this build onward) can ever report a version at all.
+const ANDROID_MIN_VERSION_CODE = 3;
+
+function androidAppVersionCode(userAgent: string): number | null {
+  const match = userAgent.match(/OnyxAndroidApp\/[^\s(]+\((\d+)\)/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+function isOutdatedAndroidApp(userAgent: string): boolean {
+  if (!userAgent.includes(ANDROID_APP_MARKER)) return false;
+  const versionCode = androidAppVersionCode(userAgent);
+  // No parseable version code at all means the old unversioned marker —
+  // i.e. v1 or v2 — which is below the floor by definition.
+  if (versionCode === null) return true;
+  return versionCode < ANDROID_MIN_VERSION_CODE;
 }
 
 // iOS has no capture-prevention API for any web context (no FLAG_SECURE
@@ -305,6 +344,10 @@ export async function middleware(request: NextRequest) {
   // channel they're not currently authorized for.
   if (!isPlatformPath && deliveryChannelBlocked) {
     return NextResponse.redirect(new URL(DEVICE_SWITCH_BLOCKED_PATH, request.url));
+  }
+
+  if (!isPlatformPath && isOutdatedAndroidApp(userAgent)) {
+    return NextResponse.redirect(new URL(ANDROID_UPDATE_REQUIRED_PATH, request.url));
   }
 
   if (!isPlatformPath && isUngatedAndroidBrowser(userAgent)) {
