@@ -32,11 +32,12 @@ export interface CreatorOption {
   handle: string;
 }
 
-// Client-side filter over an already-fetched list (this page caps at 1000
-// users server-side already, so there's no pagination to fight with yet).
-// The telegram id is the email's local part (`<telegramId>@onyx.com`, see
-// provisionFan.ts), so filtering by email doubles as filtering by telegram
-// id with no separate field needed.
+// Client-side filter over an already-fetched list — the page now loads
+// every account (paginated server-side, not capped at one listUsers page,
+// 2026-09-05), so this filters the real full set. The telegram id is the
+// email's local part (`<telegramId>@onyx.com`, see provisionFan.ts), so
+// filtering by email doubles as filtering by telegram id with no separate
+// field needed.
 type StatusFilter = "all" | "active" | "suspended";
 
 const STATUS_FILTERS: { value: StatusFilter; label: string }[] = [

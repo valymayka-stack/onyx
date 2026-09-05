@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import type { User } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { hasRole } from "@/lib/auth/roles";
@@ -30,9 +31,28 @@ export default async function AdminUsersPage() {
 
   const admin = createAdminClient();
 
-  const [{ data: userList }, { data: roles }, { data: profiles }, { data: activeSubs }, { data: creators }, { data: grants }] =
+  // listUsers only ever returns one page — with 1,000+ real accounts now,
+  // perPage:1000 alone silently dropped everyone past the first page (found
+  // 2026-09-05 chasing a fan who paid and had real access but didn't show up
+  // here or in any bot lookup that used the same pattern). Loop until a page
+  // comes back short of a full page instead of assuming everyone fits in one.
+  async function listAllUsers() {
+    const users: User[] = [];
+    let page = 1;
+    const perPage = 1000;
+    while (true) {
+      const { data, error } = await admin.auth.admin.listUsers({ page, perPage });
+      if (error || !data) break;
+      users.push(...data.users);
+      if (data.users.length < perPage) break;
+      page += 1;
+    }
+    return users;
+  }
+
+  const [userList, { data: roles }, { data: profiles }, { data: activeSubs }, { data: creators }, { data: grants }] =
     await Promise.all([
-      admin.auth.admin.listUsers({ perPage: 1000 }),
+      listAllUsers(),
       admin.from("user_roles").select("user_id, role"),
       admin.from("profiles").select("id, display_name, banned_at"),
       admin
@@ -72,7 +92,7 @@ export default async function AdminUsersPage() {
     creatorIdsByFan.set(g.fan_id, set);
   }
 
-  const rows = (userList?.users ?? [])
+  const rows = userList
     .map((u) => ({
       id: u.id,
       email: u.email ?? "—",
