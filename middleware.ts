@@ -5,7 +5,14 @@ import { hasRole, getUserRoles } from "@/lib/auth/roles";
 import { getRequestIp } from "@/lib/security/requestIp";
 import { contentChannelForDevice, fanBridgedChannelCodes } from "@/lib/security/deliveryChannel";
 
-const PUBLIC_PREFIXES = ["/login", "/api/"];
+// /pago/gracias (2026-09-05) — the redirect target Clip sends a fan's
+// browser to after a checkout concludes (see lib/payments/clipClient.ts).
+// Reached with no Onyx session in two real cases: Android's checkout now
+// opens in the system browser, a separate context from the app's own
+// WebView session (see onyx-android/MainActivity.kt's shouldOverrideUrlLoading
+// fix); and Clip's own hosted checkout page itself doesn't carry an Onyx
+// session either way. Same reasoning as /login being public.
+const PUBLIC_PREFIXES = ["/login", "/pago/gracias", "/api/"];
 const MFA_PREFIXES = ["/mfa/enroll", "/mfa/verify"];
 
 // No web-based signal (see ProtectedContentGuard.tsx) can prevent a
