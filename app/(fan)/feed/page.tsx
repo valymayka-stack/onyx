@@ -14,6 +14,7 @@ import GroupFeedViewer from "@/components/GroupFeedViewer";
 import UnlockButton from "@/components/UnlockButton";
 import ManualTransferPanel from "@/components/ManualTransferPanel";
 import { Card, CardContent } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 
 const OTHER_CREATORS_TO_UNLOCK_IDS = ["6b5c169f-38cb-4d2d-856e-22a6cb379eb8"]; // Lore
 
@@ -115,33 +116,47 @@ export default async function FeedPage() {
                   <p className="text-sm font-medium">
                     ✨ ¿Sabías que <span className="capitalize">{creator.handle}</span> VIP ya está aquí?
                   </p>
-                  <p className="text-xs text-muted-foreground">Desbloquéala ahora</p>
+                  <p className="text-xs font-semibold text-destructive">
+                    🔥 Oferta por tiempo limitado:{" "}
+                    <span className="font-normal text-muted-foreground line-through">
+                      ${(creator.monthlyPriceCents / 100).toFixed(0)}
+                    </span>{" "}
+                    ${(creator.launchPriceCents / 100).toFixed(0)} MXN
+                  </p>
                 </>
               )}
               {!hasReceiptInReview && (
-                <div className="flex flex-col items-center gap-1.5">
-                  <UnlockButton
-                    kind="subscription"
-                    creatorId={creator.id}
-                    label={isPending ? "Completar pago" : "Desbloquear"}
-                  />
-                  <ManualTransferPanel
-                    creatorId={creator.id}
-                    bank={BANK_TRANSFER_INFO.bank}
-                    clabe={BANK_TRANSFER_INFO.clabe}
-                    accountHolder={BANK_TRANSFER_INFO.accountHolder}
-                    concept={BANK_TRANSFER_INFO.concept}
-                  />
+                <div className="flex flex-col items-center gap-2">
+                  {/* Telegram is the primary CTA (2026-09-05) — this fanbase's
+                      established habit is paying via the bot, not a card
+                      checkout inside a web app; card/transfer stay as
+                      secondary options right below rather than the default. */}
                   {creator.telegramLinkUrl && (
                     <a
                       href={creator.telegramLinkUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-xs text-muted-foreground underline underline-offset-2"
+                      className={buttonVariants({ variant: "default" })}
                     >
-                      o contáctala aquí
+                      Únete ahora por Telegram
                     </a>
                   )}
+                  <div className="flex flex-col items-center gap-1.5">
+                    <UnlockButton
+                      kind="subscription"
+                      creatorId={creator.id}
+                      label={isPending ? "Completar pago con tarjeta" : "O paga con tarjeta"}
+                      variant="outline"
+                    />
+                    <ManualTransferPanel
+                      creatorId={creator.id}
+                      bank={BANK_TRANSFER_INFO.bank}
+                      clabe={BANK_TRANSFER_INFO.clabe}
+                      accountHolder={BANK_TRANSFER_INFO.accountHolder}
+                      concept={BANK_TRANSFER_INFO.concept}
+                      amountCents={creator.launchPriceCents}
+                    />
+                  </div>
                 </div>
               )}
             </CardContent>

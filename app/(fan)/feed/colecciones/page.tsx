@@ -9,6 +9,7 @@ import CollectionConsentGate from "@/components/CollectionConsentGate";
 import CollectionPhotoViewer from "@/components/CollectionPhotoViewer";
 import UnlockButton from "@/components/UnlockButton";
 import { Card, CardContent } from "@/components/ui/card";
+import { buttonVariants } from "@/components/ui/button";
 
 // Pilot scope for in-app unlocking (Grupo cross-creator + colecciones
 // sueltas): Chivis's own fans, seeing Lore's Grupo VIP under "Otras
@@ -174,22 +175,31 @@ export default async function ColeccionesPage() {
                   )}
                   <div className="flex-1">
                     <p className="text-sm font-medium">@{creator.handle}</p>
-                    <p className="text-xs text-muted-foreground">
-                      ${(creator.monthlyPriceCents / 100).toFixed(0)} MXN/mes
+                    <p className="text-xs font-semibold text-destructive">
+                      🔥{" "}
+                      <span className="font-normal text-muted-foreground line-through">
+                        ${(creator.monthlyPriceCents / 100).toFixed(0)}
+                      </span>{" "}
+                      ${(creator.launchPriceCents / 100).toFixed(0)} MXN
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1.5">
-                    <UnlockButton kind="subscription" creatorId={creator.id} label="Desbloquear" />
                     {creator.telegramLinkUrl && (
                       <a
                         href={creator.telegramLinkUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-xs text-muted-foreground underline underline-offset-2"
+                        className={buttonVariants({ variant: "default", size: "sm" })}
                       >
-                        o únete por Telegram
+                        Únete por Telegram
                       </a>
                     )}
+                    <UnlockButton
+                      kind="subscription"
+                      creatorId={creator.id}
+                      label="O paga con tarjeta"
+                      variant="outline"
+                    />
                   </div>
                 </CardContent>
               </Card>

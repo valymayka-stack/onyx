@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 
-type Props =
+type Props = (
   | { kind: "collection"; collectionId: string; label: string }
-  | { kind: "subscription"; creatorId: string; label: string };
+  | { kind: "subscription"; creatorId: string; label: string }
+) & { variant?: "default" | "outline" };
 
 // Kicks off a real external Clip checkout (window.location.href, a full
 // navigation) rather than an embedded widget — deliberately, after
@@ -46,7 +47,7 @@ export default function UnlockButton(props: Props) {
 
   return (
     <div className="flex flex-col gap-1">
-      <Button onClick={handleClick} disabled={loading}>
+      <Button onClick={handleClick} disabled={loading} variant={props.variant ?? "default"}>
         {loading ? "Abriendo pago…" : props.label}
       </Button>
       {error && <p className="text-xs text-destructive">{error}</p>}

@@ -2,12 +2,19 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createCheckout } from "@/lib/payments/clipClient";
+import { CROSS_SELL_LAUNCH_PRICE_CENTS } from "@/lib/feed/creatorAccess";
 
 // Cross-creator Grupo/Club unlock — e.g. a Chivis fan buying Lore's Grupo
 // VIP directly from "Explora más". Same subscription reuse logic as
 // fake-charge/route.ts, but async: creates a pending payment + redirects to
 // Clip's hosted checkout instead of resolving inline. Activation happens in
 // the webhook (app/api/webhooks/clip-onyx/route.ts) once Clip confirms.
+//
+// Always charges CROSS_SELL_LAUNCH_PRICE_CENTS, not creator.monthly_price_cents
+// (2026-09-05 launch discount) — this route only ever exists to unlock a
+// creator the fan doesn't already have (see the eligibility check below,
+// same one getUnlockableOtherCreators uses), so every real caller here is
+// cold traffic by definition, not an existing subscriber renewing.
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
   const targetCreatorId = body?.creatorId;
@@ -62,7 +69,7 @@ export async function POST(request: NextRequest) {
   let checkout;
   try {
     checkout = await createCheckout({
-      amountCents: creator.monthly_price_cents,
+      amountCents: CROSS_SELL_LAUNCH_PRICE_CENTS,
       // Deliberately generic (2026-09-04) — a statement descriptor naming the
       // creator/handle is both a privacy leak for the fan and a likely source
       // of confused-charge disputes ("no reconozco este cargo").
@@ -79,7 +86,7 @@ export async function POST(request: NextRequest) {
     subscription_id: subscriptionId,
     fan_id: user.id,
     creator_id: targetCreatorId,
-    amount_cents: creator.monthly_price_cents,
+    amount_cents: CROSS_SELL_LAUNCH_PRICE_CENTS,
     processor: "clip",
     processor_reference: checkout.paymentRequestId,
     status: "pending",

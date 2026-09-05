@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { MAX_UPLOAD_BYTES, oversizedFileMessage } from "@/lib/uploadLimits";
+import { CROSS_SELL_LAUNCH_PRICE_CENTS } from "@/lib/feed/creatorAccess";
 
 // Fan-side alternative to Clip card checkout (2026-09-04) — same
 // pending-subscription reuse logic as app/api/payments/clip/subscription/
@@ -11,6 +12,11 @@ import { MAX_UPLOAD_BYTES, oversizedFileMessage } from "@/lib/uploadLimits";
 // itself — only stores the receipt for admin review
 // (app/(admin)/admin/transfer-receipts), which calls activateSubscription
 // the same way the Clip webhook does.
+//
+// Always CROSS_SELL_LAUNCH_PRICE_CENTS, not creator.monthly_price_cents —
+// same launch-discount reasoning as the Clip subscription route (2026-09-05):
+// this route only ever exists for the cross-creator unlock pilot, so every
+// caller is cold traffic by definition.
 export async function POST(request: NextRequest) {
   const formData = await request.formData().catch(() => null);
   const creatorId = formData?.get("creatorId");
@@ -92,7 +98,7 @@ export async function POST(request: NextRequest) {
     subscription_id: subscriptionId,
     fan_id: user.id,
     creator_id: creatorId,
-    amount_cents: creator.monthly_price_cents,
+    amount_cents: CROSS_SELL_LAUNCH_PRICE_CENTS,
     receipt_storage_path: storagePath,
     status: "pending",
   });

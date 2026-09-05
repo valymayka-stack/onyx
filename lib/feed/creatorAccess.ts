@@ -96,10 +96,22 @@ export async function getPendingReceiptCreatorIds(
   return new Set((data ?? []).map((row) => row.creator_id as string));
 }
 
+// Launch discount for this pilot only (2026-09-05) — cold traffic (a fan who
+// has never seen this creator's content) pays this instead of the regular
+// monthly_price_cents. Every fan this function ever returns is by
+// definition someone without active access yet (see the eligibility filter
+// below), so "eligible to see the offer" and "eligible for the launch
+// price" are the same set — no separate "have they bought before" check
+// needed. Scoped to this file rather than creators.monthly_price_cents
+// itself so the real fans already paying full price elsewhere (e.g.
+// Lore's own Telegram subscribers) are never affected.
+export const CROSS_SELL_LAUNCH_PRICE_CENTS = 20000;
+
 export interface UnlockableCreator {
   id: string;
   handle: string;
   monthlyPriceCents: number;
+  launchPriceCents: number;
   coverUrl: string | null;
   telegramLinkUrl: string | null;
 }
@@ -157,6 +169,7 @@ export async function getUnlockableOtherCreators(
       id: c.id,
       handle: c.handle,
       monthlyPriceCents: c.monthly_price_cents,
+      launchPriceCents: CROSS_SELL_LAUNCH_PRICE_CENTS,
       coverUrl: coverItemId ? `/api/content/${coverItemId}?t=${issueContentToken(coverItemId, fanId)}` : null,
       telegramLinkUrl: telegramLinkByCreator.get(c.id) ?? null,
     };

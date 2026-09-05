@@ -12,12 +12,14 @@ export default function ManualTransferPanel({
   clabe,
   accountHolder,
   concept,
+  amountCents,
 }: {
   creatorId: string;
   bank: string;
   clabe: string;
   accountHolder: string;
   concept: string;
+  amountCents: number;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -70,6 +72,8 @@ export default function ManualTransferPanel({
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-1.5 rounded-lg border border-border/60 bg-muted/20 p-3 text-left">
       <p className="text-xs text-muted-foreground">
+        Monto: <span className="font-medium text-foreground">${(amountCents / 100).toFixed(0)} MXN</span>
+        <br />
         Banco: <span className="font-medium text-foreground">{bank}</span>
         <br />
         CLABE: <span className="font-medium text-foreground">{clabe}</span>
